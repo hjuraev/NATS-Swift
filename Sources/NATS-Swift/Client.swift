@@ -50,7 +50,7 @@ public final class NatsClient {
     }
     
 
-    func listenSocket() {
+    public func listenSocket() {
 
         let stream = client.socket.source(on: worker)
         _ = stream.stream(to: parser).drain { [weak self] message in

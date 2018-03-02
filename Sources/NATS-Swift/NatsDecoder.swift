@@ -79,14 +79,15 @@ final class NatsParser: ByteParser {
             let message = try parseFrameHeader(partial: message, from: buffer)
             
             if message.completed {
-                print("GOT COMPLETED AFTER REFETTCHING")
-                
-                return .completed(consuming: message.consumed + 1, result: message)
-            } else {
-                print("STILL NEED MORE TO COMPLETED AFTER REFETTCHING")
                 defer {
                     // Always write these. Ensures that successful and uncompleted parsing are covered, always
-                    _ = MutableByteBuffer(start: bufferBuilder, count: message.consumed).initialize(from: message.rawValue)
+                    _ = MutableByteBuffer(start: bufferBuilder, count: message.consumed + 1).initialize(from: buffer)
+                }
+                return .completed(consuming: message.consumed + 1, result: message)
+            } else {
+                defer {
+                    // Always write these. Ensures that successful and uncompleted parsing are covered, always
+                    _ = MutableByteBuffer(start: bufferBuilder, count: buffer.count).initialize(from: buffer)
                 }
                 return .uncompleted(.partial(message))
             }
