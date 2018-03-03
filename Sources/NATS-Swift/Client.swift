@@ -12,7 +12,7 @@ import Vapor
 import Bits
 
 
-protocol NatsClientDelegate {
+public protocol NatsClientDelegate {
     func receivedMessage(message: NatsMessage)
     func receivedRequest(message: NatsMessage)
     func receivedError(error: NatsError)
@@ -28,7 +28,7 @@ public final class NatsClient {
     var data: Data = Data()
     var url: URI
     var worker: Worker
-    var delegate: NatsClientDelegate?
+    public var delegate: NatsClientDelegate?
     let parser: TranslatingStreamWrapper<NatsParser>
     fileprivate var subscriptions = [UUID:NatsSubscription]()
     fileprivate var server: Server?

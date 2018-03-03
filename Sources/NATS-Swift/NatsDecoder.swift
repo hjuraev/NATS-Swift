@@ -59,11 +59,9 @@ final class NatsParser: ByteParser {
         
         let message = try parseFrameHeader(from: buffer)
             if message.completed {
-                print("GOT COMPLETED")
                 return .completed(consuming: message.consumed + 1, result: message)
             } else {
                 _ = MutableByteBuffer(start: bufferBuilder.advanced(by: message.consumed + 1), count: buffer.count).initialize(from: buffer)
-                print("GOT INCOMPLETED")
                 return .uncompleted(.partial(message))
             }
     }
@@ -265,6 +263,7 @@ final class NatsParser: ByteParser {
                     continue
                 default:
                     message.state = .MSG_ARG
+                    localMSGArg.append(value)
                     break
                 }
             case .MSG_ARG:

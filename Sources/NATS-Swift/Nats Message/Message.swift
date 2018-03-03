@@ -8,11 +8,11 @@
 import Foundation
 
 public struct NatsMessage {
-    let headers: Headers
-    let payload: Data
-    let sub: NatsSubscription?
+    public let headers: Headers
+    public let payload: Data
+    public let sub: NatsSubscription?
     
-    struct Headers: Codable {
+    public struct Headers: Codable {
         let subject: String
         let sid: String
         let replay: String?
