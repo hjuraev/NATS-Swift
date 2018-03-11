@@ -14,7 +14,7 @@ public struct NatsSubscription {
     public let queueGroup: String
     fileprivate(set) var count: UInt
     
-    func sub() -> String {
+    public func sub() -> String {
         let group: () -> String = {
             if self.queueGroup.count > 0 {
                 return "\(self.queueGroup) "
@@ -25,7 +25,7 @@ public struct NatsSubscription {
         return "\(Proto.SUB.rawValue) \(subject) \(group())\(id.uuidString)\r\n"
     }
     
-    func unsub(_ max: UInt32) -> String {
+    public func unsub(_ max: UInt32) -> String {
         let wait: () -> String = {
             if max > 0 {
                 return " \(max)"
@@ -54,18 +54,18 @@ enum Proto: String, Codable {
     case PING = "PING"
 }
 
-struct Server: Codable {
-    let server_id: String
-    let version: String
-    let go: String
-    let host: String
-    let port: Int
-    let auth_required: Bool
-    let ssl_required: Bool
-    let tls_required: Bool
-    let tls_verify: Bool
-    let max_payload: Int
-    let connect_urls: [String]
+public struct Server: Codable {
+    public let server_id: String
+    public let version: String
+    public let go: String
+    public let host: String
+    public let port: Int
+    public let auth_required: Bool
+    public let ssl_required: Bool
+    public let tls_required: Bool
+    public let tls_verify: Bool
+    public let max_payload: Int
+    public let connect_urls: [String]
 
 }
 

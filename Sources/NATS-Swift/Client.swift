@@ -13,21 +13,68 @@ import Bits
 
 
 public protocol NatsClientDelegate {
-    func receivedMessage(message: NatsMessage)
-    func receivedRequest(message: NatsMessage)
-    func receivedError(error: NatsError)
-    func receivedPing()
+    func receivedMessage(container: Container, message: NatsMessage)
+    func receivedRequest(container: Container, message: NatsMessage)
+    func receivedError(container: Container, error: NatsError)
+    func receivedPing(container: Container)
+}
+
+public struct NatsClientConfig: Codable, ServiceType {
+    public static func makeService(for worker: Container) throws -> NatsClientConfig {
+        return .default()
+    }
+    
+
+    
+    /// Default `RedisClientConfig`
+    public static func `default`() -> NatsClientConfig {
+        return .init(hostname: "localhost", port: 4222)
+    }
+    
+    /// The Redis server's hostname.
+    public var hostname: String
+    
+    /// The Redis server's port.
+    public var port: UInt16
+    
+    /// Create a new `RedisClientConfig`
+    public init(hostname: String, port: UInt16) {
+        self.hostname = hostname
+        self.port = port
+    }
+}
+
+public final class NatsProvider: Provider {
+    
+    public static var repositoryName: String = "Nats Client"
+    let config: NatsClientConfig
+    
+    init(config: NatsClientConfig) {
+        self.config = config
+    }
+    public func register(_ services: inout Services) throws {
+        services.register(NatsClient.self)
+        services.register(config)
+    }
+    
+    public func boot(_ worker: Container) throws {
+    }
+    
+    
 }
 
 
-
-public final class NatsClient {
+public final class NatsClient: ServiceType {
     
+    public static func makeService(for worker: Container) throws -> NatsClient {
+        let config: NatsClientConfig = try worker.make(NatsClientConfig.self, for: NatsClient.self)
+        return try NatsClient(config: config, container: worker)
+    }
+
     let client: TCPClient
     var StringData = String()
     var data: Data = Data()
-    var url: URI
-    var worker: Worker
+    public let container: Container
     public var delegate: NatsClientDelegate?
     let parser: TranslatingStreamWrapper<NatsParser>
     fileprivate var subscriptions = [UUID:NatsSubscription]()
@@ -35,24 +82,23 @@ public final class NatsClient {
     var requests:[String: Promise<NatsMessage>] = [:]
     
     
-    public init(hostname: String, port: UInt16, worker: Worker) throws {
-        self.url = URI(scheme: nil, userInfo: nil, hostname: hostname, port: port, path: "/", query: nil, fragment: nil)
-        self.worker = worker
+    public init(config: NatsClientConfig, container: Container) throws {
+        self.container = container
         let socket = try TCPSocket(isNonBlocking: false)
         self.client = try TCPClient(socket: socket)
-        try client.connect(hostname: hostname, port: port)
+        try client.connect(hostname: config.hostname, port: config.port)
         var data = try client.socket.read(max: 3600)
         data.removeFirst(5)
         let decoder = JSONDecoder()
         decoder.dataDecodingStrategy = .deferredToData
         self.server = try decoder.decode(Server.self, from: data)
-        self.parser = NatsParser(worker: worker).stream(on: worker)
+        self.parser = NatsParser(worker: container).stream(on: container)
     }
     
 
     public func listenSocket() {
 
-        let stream = client.socket.source(on: worker)
+        let stream = client.socket.source(on: container)
         _ = stream.stream(to: parser).drain { [weak self] message in
             guard let strongSelf = self else {return}
             switch message.proto {
@@ -60,7 +106,7 @@ public final class NatsClient {
                 switch value {
                 case .PING:
                     strongSelf.processPing()
-                    strongSelf.delegate?.receivedPing()
+                    strongSelf.delegate?.receivedPing(container: strongSelf.container)
                 case .CONNECT:
                     break
                 case .SUB:
@@ -72,9 +118,9 @@ public final class NatsClient {
                 case .MSG:
                     let localMessage = strongSelf.completeMessage(partial: message)
                     if localMessage.headers.replay != nil {
-                        strongSelf.delegate?.receivedRequest(message: localMessage)
+                        strongSelf.delegate?.receivedRequest(container: strongSelf.container, message: localMessage)
                     } else {
-                        strongSelf.delegate?.receivedMessage(message: localMessage)
+                        strongSelf.delegate?.receivedMessage(container: strongSelf.container, message: localMessage)
                     }
                     break
                 case .INFO:
@@ -83,7 +129,7 @@ public final class NatsClient {
                     break
                 case .ERR:
                     let error = NatsError(description: String(data: message.rawValue, encoding: .utf8))
-                    strongSelf.delegate?.receivedError(error: error)
+                    strongSelf.delegate?.receivedError(container: strongSelf.container, error: error)
                     break
                 case .PONG:
                     break

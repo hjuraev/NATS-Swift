@@ -13,27 +13,27 @@ public struct NatsMessage {
     public let sub: NatsSubscription?
     
     public struct Headers: Codable {
-        let subject: String
-        let sid: String
-        let replay: String?
-        let size: Int
+        public let subject: String
+        public let sid: String
+        public let replay: String?
+        public let size: Int
     }
 }
 public struct NatsError {
-    let description: String?
+    public let description: String?
 }
 
 
 
 final class PartialNatsMessage {
-    var rawValue: Data = Data()
-    var proto: Proto?
-    var headers: NatsMessage.Headers?
-    var payload: Data?
-    var state: NatsParser.MESSAGE_STATE = .OP_START
-    var info: Data?
-    var consumed: Int = 0
-    var completed: Bool = false
+    public var rawValue: Data = Data()
+    public var proto: Proto?
+    public var headers: NatsMessage.Headers?
+    public var payload: Data?
+    public var state: NatsParser.MESSAGE_STATE = .OP_START
+    public var info: Data?
+    public var consumed: Int = 0
+    public var completed: Bool = false
 }
 
 
