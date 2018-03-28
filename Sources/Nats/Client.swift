@@ -107,7 +107,8 @@ public final class NatsClient: Service {
                     self.server = server
                     break
                 case .MSG(let message):
-                    
+                    var message = message
+                    message.container = container
                     if !self.requestsStorage.isEmpty, let request = self.requestsStorage[message.headers.sid] {
                         request.promise.succeed(result: message)
                         self.requestsStorage.removeValue(forKey: message.headers.sid)

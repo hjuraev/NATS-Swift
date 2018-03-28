@@ -6,11 +6,13 @@
 //
 
 import Foundation
+import Vapor
 
 public struct MSG {
     public let headers: Headers
     public let payload: Data
     public let sub: NatsSubscription?
+    public var container: Container?
     
     public struct Headers: Codable {
         public let subject: String
