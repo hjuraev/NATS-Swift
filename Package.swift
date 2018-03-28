@@ -12,7 +12,7 @@ let package = Package(
             targets: ["Nats"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/vapor/vapor.git", from: "3.0.0-rc.2"),
+        .package(url: "https://github.com/vapor/vapor.git", from: "3.0.0-rc.2.2"),
 
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),

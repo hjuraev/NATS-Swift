@@ -31,7 +31,7 @@ class NatsHandler: ChannelInboundHandler {
     public var onClose: (() -> ())?
     public var onOpen: (() -> ())?
 
-    public var onSocketError: (() -> ())?
+    public var onSocketError: ((Error) -> ())?
 
     
     
@@ -54,7 +54,6 @@ class NatsHandler: ChannelInboundHandler {
     
     public func handlerAdded(ctx: ChannelHandlerContext) {
         self.currentCtx = ctx
-        onOpen?()
     }
     
     
@@ -105,12 +104,12 @@ class NatsHandler: ChannelInboundHandler {
     /// See `ChannelInboundHandler.channelActive(ctx:)`
     public func channelActive(ctx: ChannelHandlerContext) {
         writeOutputIfEnqueued(ctx: ctx)
+        onOpen?()
     }
     
     /// See `ChannelInboundHandler.errorCaught(error:)`
     public func errorCaught(ctx: ChannelHandlerContext, error: Error) {
-        print(error)
-        // TODO: ERROR MESSAGE
+        onSocketError?(error)
     }
 }
 

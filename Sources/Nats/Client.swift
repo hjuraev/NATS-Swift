@@ -23,7 +23,7 @@ public struct NatsClientConfig: Codable, ServiceType {
     
     /// Default `RedisClientConfig`
     public static func `default`() -> NatsClientConfig {
-        return .init(hostname: "localhost", port: 4222)
+        return .init(hostname: "localhost", port: 4222, threadNum: 4)
     }
     
     /// The Redis server's hostname.
@@ -31,11 +31,13 @@ public struct NatsClientConfig: Codable, ServiceType {
     
     /// The Redis server's port.
     public var port: Int
+    public var threadNum: Int
     
     /// Create a new `RedisClientConfig`
-    public init(hostname: String, port: Int) {
+    public init(hostname: String, port: Int, threadNum: Int) {
         self.hostname = hostname
         self.port = port
+        self.threadNum = threadNum
     }
 }
 
@@ -49,8 +51,10 @@ public final class NatsClient: Service {
     fileprivate var subscriptions = [UUID:NatsSubscription]()
     fileprivate var server: Server?
     fileprivate var requestsStorage: [UUID:NatsRequest] = [:]
+    fileprivate let threadGroup: MultiThreadedEventLoopGroup
+    let mainContainer: Container
 
-    public static func connect(config: NatsClientConfig, on worker: Worker, onError: @escaping (Error) -> Void) throws -> Future<NatsClient> {
+    public static func connect(config: NatsClientConfig, on worker: Container, onError: @escaping (Error) -> Void) throws -> Future<NatsClient> {
         let handler = NatsHandler(on: worker, onError: onError)
         let bootstrap = ClientBootstrap(group: worker.eventLoop)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
@@ -60,13 +64,15 @@ public final class NatsClient: Service {
                 })
         }
         return bootstrap.connect(host: config.hostname, port: config.port).map(to: NatsClient.self, { _ in
-            return .init(queue: handler)
+            return .init(queue: handler, container: worker, threadNum: config.threadNum)
         })
     }
     
     
-    init(queue: NatsHandler) {
+    init(queue: NatsHandler, container: Container, threadNum: Int) {
         self.handler = queue
+        self.mainContainer = container
+        threadGroup = MultiThreadedEventLoopGroup(numThreads: threadNum)
         listenSocket()
     }
 
@@ -80,32 +86,39 @@ public final class NatsClient: Service {
         self.handler.onClose = {
             self.onClose?()
         }
+        
         self.handler.onNatsMessage = { msg in
-            switch msg {
-            case .OK:
-                break
-            case .PING:
-                break
-            case .PONG:
-                break
-            case .ERR(let error):
-                self.onError?(error)
-                break
-            case .INFO(let server):
-                self.onInfo?(server)
-                break
-            case .MSG(let message):
-                
-                if !self.requestsStorage.isEmpty, let request = self.requestsStorage[message.headers.sid] {
-                    request.promise.succeed(result: message)
-                    self.requestsStorage.removeValue(forKey: message.headers.sid)
-                    return
-                }else if let sub = self.subscriptions[message.headers.sid] {
-                    sub.callback?(message)
-                } else {
-                    debugPrint("Received message without subscription")
+            let container = Thread.current.cachedSubContainer(for: self.mainContainer, on: self.threadGroup.next())
+            container.eventLoop.execute {
+                switch msg {
+                case .OK:
+                    break
+                case .PING:
+                    self.processPing()
+                    break
+                case .PONG:
+                    
+                    break
+                case .ERR(let error):
+                    self.onError?(error)
+                    break
+                case .INFO(let server):
+                    self.onInfo?(server)
+                    self.server = server
+                    break
+                case .MSG(let message):
+                    
+                    if !self.requestsStorage.isEmpty, let request = self.requestsStorage[message.headers.sid] {
+                        request.promise.succeed(result: message)
+                        self.requestsStorage.removeValue(forKey: message.headers.sid)
+                        return
+                    }else if let sub = self.subscriptions[message.headers.sid] {
+                        sub.callback?(message)
+                    } else {
+                        debugPrint("Received message without subscription")
+                    }
+                    break
                 }
-                break
             }
         }
     }
@@ -184,5 +197,17 @@ public final class NatsClient: Service {
     
 }
 
-
+extension Thread {
+    func cachedSubContainer(for container: Container, on worker: Worker) -> SubContainer {
+        let subContainer: SubContainer
+        if let existing = threadDictionary["subcontainer"] as? SubContainer {
+            subContainer = existing
+        } else {
+            let new = container.subContainer(on: worker)
+            subContainer = new
+            threadDictionary["subcontainer"] = new
+        }
+        return subContainer
+    }
+}
 
