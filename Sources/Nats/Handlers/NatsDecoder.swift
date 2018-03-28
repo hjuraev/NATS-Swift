@@ -376,7 +376,7 @@ struct NatsParser {
     
     func completeMessage() -> MSG? {
         guard let localHeaders = headers else {return nil}
-        let message = MSG(headers: localHeaders, payload: payload, sub: nil)
+        let message = MSG(headers: localHeaders, payload: payload, sub: nil, container: nil)
         return message
     }
     
