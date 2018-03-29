@@ -29,9 +29,9 @@ class NatsHandler: ChannelInboundHandler {
     
     public var onNatsMessage: ((InboundIn) -> ())?
     public var onClose: (() -> ())?
-    public var onOpen: (() -> ())?
+    public var onOpen: (() -> ())
 
-    public var onSocketError: ((Error) -> ())?
+    private var errorHandler: (Error) -> ()
 
     
     
@@ -41,14 +41,14 @@ class NatsHandler: ChannelInboundHandler {
     /// A write-ready context waiting.
     
     /// Handles errors that happen when no input promise is waiting.
-    private var errorHandler: (Error) -> ()
     
     /// Create a new `QueueHandler` on the supplied worker.
-    public init(on worker: Worker, onError: @escaping (Error) -> ()) {
+    public init(on worker: Worker, onError: @escaping (Error) -> (), onOpen: @escaping () -> ()) {
         self.inputQueue = []
         self.outputQueue = []
         self.eventLoop = worker.eventLoop
         self.errorHandler = onError
+        self.onOpen = onOpen
     }
     
     
@@ -72,11 +72,6 @@ class NatsHandler: ChannelInboundHandler {
     /// - returns: A future signal. Will be completed when `onInput` returns `true` or throws an error.
     public func enqueue(_ message: String) -> Bool {
         guard let ctx = currentCtx else {return false}
-        
-        guard ctx.channel.isActive else {
-            // TODO: FIX DEBUG MESSAGE
-            return false
-        }
         outputQueue.insert(message, at: 0)
             ctx.eventLoop.execute {
                 self.writeOutputIfEnqueued(ctx: ctx)
@@ -104,12 +99,12 @@ class NatsHandler: ChannelInboundHandler {
     /// See `ChannelInboundHandler.channelActive(ctx:)`
     public func channelActive(ctx: ChannelHandlerContext) {
         writeOutputIfEnqueued(ctx: ctx)
-        onOpen?()
+        onOpen()
     }
     
     /// See `ChannelInboundHandler.errorCaught(error:)`
     public func errorCaught(ctx: ChannelHandlerContext, error: Error) {
-        onSocketError?(error)
+        errorHandler(error)
     }
 }
 

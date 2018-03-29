@@ -54,8 +54,8 @@ public final class NatsClient: Service {
     fileprivate let threadGroup: MultiThreadedEventLoopGroup
     let mainContainer: Container
 
-    public static func connect(config: NatsClientConfig, on worker: Container, onError: @escaping (Error) -> Void) throws -> Future<NatsClient> {
-        let handler = NatsHandler(on: worker, onError: onError)
+    public static func connect(config: NatsClientConfig, on worker: Container, onError: @escaping (Error) -> Void, onOpen: @escaping () -> Void) throws -> Future<NatsClient> {
+        let handler = NatsHandler(on: worker, onError: onError, onOpen: onOpen)
         let bootstrap = ClientBootstrap(group: worker.eventLoop)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
             .channelInitializer { channel in
