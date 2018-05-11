@@ -14,7 +14,7 @@ import Bits
 
 
 
-public struct NatsClientConfig: Codable, ServiceType {
+public struct NatsClientConfig: Codable {
     public static func makeService(for worker: Container) throws -> NatsClientConfig {
         return .default()
     }
@@ -34,6 +34,7 @@ public struct NatsClientConfig: Codable, ServiceType {
     public var threadNum: Int
     
     /// Create a new `RedisClientConfig`
+    /// NOTE: For each thread it creates separate socket connection to NAT server
     public init(hostname: String, port: Int, threadNum: Int) {
         self.hostname = hostname
         self.port = port
@@ -41,109 +42,146 @@ public struct NatsClientConfig: Codable, ServiceType {
     }
 }
 
+public protocol NatsClientDelegate {
+    func open(ctx: ChannelHandlerContext)
+    func close(ctx: ChannelHandlerContext)
+    func error(ctx: ChannelHandlerContext, error: NatsError)
+}
 
 
-public final class NatsClient: Service {
+public final class NatsClient:NatsHandlerDelegate, Container {
+    
+    public var config: Config
+    
+    public var environment: Environment
+    
+    public var services: Services
+    
+    public var serviceCache: ServiceCache
+    
+    public var delegate: NatsClientDelegate
 
     private let handler: NatsHandler
     
-//    let parser: TranslatingStreamWrapper<NatsParser>
-    fileprivate var subscriptions = [UUID:NatsSubscription]()
-    fileprivate var server: Server?
-    fileprivate var requestsStorage: [UUID:NatsRequest] = [:]
+    public var server: [Server] = []
+    
     fileprivate let threadGroup: MultiThreadedEventLoopGroup
-    let mainContainer: Container
+    
+    public init(natsConfig: NatsClientConfig, _ config: inout Config, _ env: inout Environment, _ services: inout Services, delegate: NatsClientDelegate) {
+        threadGroup = MultiThreadedEventLoopGroup(numThreads: natsConfig.threadNum)
+        let handler = NatsHandler()
+        self.handler = handler
 
-    public static func connect(config: NatsClientConfig, on worker: Container, onError: @escaping (Error) -> Void, onOpen: @escaping () -> Void) throws -> Future<NatsClient> {
-        let handler = NatsHandler(on: worker, onError: onError, onOpen: onOpen)
-        let bootstrap = ClientBootstrap(group: worker.eventLoop)
+        let bootstrap = ClientBootstrap(group: threadGroup)
             .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
             .channelInitializer { channel in
                 return channel.pipeline.addHandlers([NatsEncoder(), NatsDecoder()], first: true).then({
                     channel.pipeline.add(handler: handler)
                 })
         }
-        return bootstrap.connect(host: config.hostname, port: config.port).map(to: NatsClient.self, { _ in
-            return .init(queue: handler, container: worker, threadNum: config.threadNum)
-        })
-    }
-    
-    
-    init(queue: NatsHandler, container: Container, threadNum: Int) {
-        self.handler = queue
-        self.mainContainer = container
-        threadGroup = MultiThreadedEventLoopGroup(numThreads: threadNum)
-        listenSocket()
-    }
-
-    public var onError: ((NatsError) -> ())?
-    public var onInfo: ((Server) -> ())?
-    public var onClose: (() -> ())?
-    
-
-    
-    public func listenSocket() {
-        self.handler.onClose = {
-            self.onClose?()
+        for _ in 0..<natsConfig.threadNum {
+            _ = bootstrap.connect(host: natsConfig.hostname, port: natsConfig.port)
         }
-        
-        self.handler.onNatsMessage = { msg in
-            let container = Thread.current.cachedSubContainer(for: self.mainContainer, on: self.threadGroup.next())
-            container.eventLoop.execute {
-                switch msg {
-                case .OK:
-                    break
-                case .PING:
-                    self.processPing()
-                    break
-                case .PONG:
-                    
-                    break
-                case .ERR(let error):
-                    self.onError?(error)
-                    break
-                case .INFO(let server):
-                    self.onInfo?(server)
-                    self.server = server
-                    break
-                case .MSG(let message):
-                    var message = message
-                    message.container = container
-                    if !self.requestsStorage.isEmpty, let request = self.requestsStorage[message.headers.sid] {
-                        request.promise.succeed(result: message)
-                        self.requestsStorage.removeValue(forKey: message.headers.sid)
-                        return
-                    }else if let sub = self.subscriptions[message.headers.sid] {
-                        sub.callback?(message)
-                    } else {
-                        debugPrint("Received message without subscription")
-                    }
-                    break
+        self.config = config
+        self.environment = env
+        self.services = services
+        self.serviceCache = .init()
+        self.delegate = delegate
+        self.handler.delegate = self
+    }
+
+
+
+    
+    
+    func message(ctx: ChannelHandlerContext, message: NatsMessage) {
+        print(message)
+        switch message {
+        case .OK:
+            break
+        case .PING:
+            self.processPing(ctx: ctx)
+            break
+        case .PONG:
+            
+            break
+        case .ERR(let error):
+            delegate.error(ctx: ctx, error: error)
+            break
+        case .INFO(let server):
+            self.server.append(server)
+            print(Thread.current.threadDictionary)
+            break
+        case .MSG(let message):
+            print(message.headers.subject)
+            let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
+            
+            if let storage = try? subContainer.make(NatsResponseStorage.self) {
+                if !storage.requestsStorage.isEmpty, let request = storage.requestsStorage[message.headers.sid] {
+                    request.promise.succeed(result: message)
+                    storage.requestsStorage.removeValue(forKey: message.headers.sid)
+                } else if let sub = storage.subscriptions[message.headers.sid] {
+                    sub.callback?(message)
+                } else {
+                    debugPrint("Received message without subscription")
                 }
             }
+            break
         }
     }
     
-    fileprivate func processPing() {
-        print("Sending Pong")
-        _ = self.handler.enqueue("\(Proto.PONG.rawValue)\r\n")
+    func added(ctx: ChannelHandlerContext) {
+    }
+    
+    func open(ctx: ChannelHandlerContext) {
+        Thread.current.threadDictionary["ctx"] = ctx
+
+        delegate.open(ctx: ctx)
+    }
+    
+    func close(ctx: ChannelHandlerContext) {
+        delegate.close(ctx: ctx)
+
+    }
+    
+    func error(ctx: ChannelHandlerContext, error: Error) {
+//        delegate.error(ctx: ctx, error: NatsError)
+    }
+    
+    
+    
+    fileprivate func processPing(ctx:ChannelHandlerContext) {
+        self.handler.write(ctx: ctx, data: "\(Proto.PONG.rawValue)\r\n".data(using: .utf8) ?? Data())
     }
 
 
-    open func subscribe(_ subject: String, queueGroup: String = "", callback: ((MSG) -> ())?) -> Void {
-        guard subscriptions.filter({ $0.value.subject == subject }).count == 0 else { return }
+    open func subscribe(_ subject: String, queueGroup: String = "NATS-GROUP", callback: ((MSG) -> ())?) throws -> Void {
+        let ctx = try Thread.current.cachedChannelHandler()
+        let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
+
+        guard let storage = try? subContainer.make(NatsResponseStorage.self) else {return}
+
+        guard storage.subscriptions.filter({ $0.value.subject == subject }).count == 0 else { return }
         let uuid = UUID()
         let sub = NatsSubscription(id: uuid, subject: subject, queueGroup: queueGroup, count: 0, callback: callback)
-        subscriptions.updateValue(sub, forKey: uuid)
-        _ = self.handler.enqueue(sub.sub())
+        
+        storage.subscriptions.updateValue(sub, forKey: uuid)
+        
+
+        self.handler.write(ctx: ctx, data: sub.sub())
     }
 
 
     
-    open func unsubscribe(_ subject: String, max: UInt32 = 0) {
-        guard let sub = subscriptions.filter({ $0.value.subject == subject }).first else { return }
-        subscriptions.removeValue(forKey: sub.key)
-        _ = self.handler.enqueue(sub.value.unsub(max))
+    open func unsubscribe(_ subject: String, max: UInt32 = 0) throws {
+        let ctx = try Thread.current.cachedChannelHandler()
+        let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
+        guard let storage = try? subContainer.make(NatsResponseStorage.self) else {return}
+        
+        guard let sub = storage.subscriptions.filter({ $0.value.subject == subject }).first else { return }
+        storage.subscriptions.removeValue(forKey: sub.key)
+
+        self.handler.write(ctx: ctx, data: sub.value.unsub(max))
     }
     
     /**
@@ -151,14 +189,15 @@ public final class NatsClient: Service {
      * publish to subject
      *
      */
-    open func publish(_ subject: String, payload: String) {
-        let pub: () -> String = {
+    open func publish(_ subject: String, payload: String) throws {
+        let pub: () -> Data = {
             if let data = payload.data(using: String.Encoding.utf8) {
-                return "\(Proto.PUB.rawValue) \(subject) \(data.count)\r\n\(payload)\r\n"
+                return "\(Proto.PUB.rawValue) \(subject) \(data.count)\r\n\(payload)\r\n".data(using: .utf8) ?? Data()
             }
-            return ""
+            return Data()
         }
-        _ = self.handler.enqueue(pub())
+        let ctx = try Thread.current.cachedChannelHandler()
+        self.handler.write(ctx: ctx, data: pub())
     }
     
     /**
@@ -166,39 +205,61 @@ public final class NatsClient: Service {
      * reply to id in subject
      *
      */
-    open func request(_ subject: String, replyto: String, payload: String) -> EventLoopFuture<MSG>? {
+    open func request(_ subject: String, payload: String, timeout: Int) throws -> EventLoopFuture<MSG> {
         let uuid = UUID()
-
-        guard let context = handler.currentCtx else {return nil}
-        let promise = context.eventLoop.newPromise(MSG.self)
-
         
-        let schedule = context.eventLoop.scheduleTask(in: .seconds(2), {
+        let ctx = try Thread.current.cachedChannelHandler()
+
+        let promise = ctx.eventLoop.newPromise(MSG.self)
+
+        let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
+        guard let storage = try? subContainer.make(NatsResponseStorage.self) else { throw NatsRequestError.couldNotFetchRequestStorage}
+        
+        let schedule = ctx.eventLoop.scheduleTask(in: .seconds(timeout), {
             promise.fail(error: NatsRequestError.TIMEOUT)
-            _ = self.requestsStorage.removeValue(forKey: uuid)
+            storage.requestsStorage.removeValue(forKey: uuid)
         })
-  
+        let sub = "\(Proto.SUB.rawValue) \(uuid.uuidString) \(uuid.uuidString)\r\n\(Proto.UNSUB.rawValue) \(uuid.uuidString) \(1)\r\n".data(using: .utf8)
+        self.handler.write(ctx: ctx, data: sub ?? Data())
+        
         let request = NatsRequest(id: uuid, subject: subject, promise: promise, scheduler: schedule)
         
-        requestsStorage.updateValue(request, forKey: uuid)
-
-        let requestSocket: () -> String = {
+        storage.requestsStorage.updateValue(request, forKey: uuid)
+        let requestSocket: () -> Data = {
             if let data = payload.data(using: String.Encoding.utf8) {
-                return "\(Proto.PUB.rawValue) \(subject) \(replyto) \(data.count)\r\n\(payload)\r\n"
+                return "\(Proto.PUB.rawValue) \(subject) \(uuid.uuidString) \(data.count)\r\n\(payload)\r\n".data(using: .utf8) ?? Data()
             }
-            return ""
+            return Data()
         }
-        _ = self.handler.enqueue(requestSocket())
+        self.handler.write(ctx: ctx, data: requestSocket())
         return promise.futureResult
     }
     
     enum NatsRequestError: Error {
         case TIMEOUT
+        case couldNotFindMainContainer
+        case couldNotFetchRequestStorage
     }
     
 }
 
 extension Thread {
+    func cachedChannelHandler() throws -> ChannelHandlerContext {
+        
+        enum ChannelContextError: Error {
+            case CouldNotFindChannelContextInThisThread
+        }
+        
+        if let ctx = threadDictionary["ctx"] as? ChannelHandlerContext {
+            return ctx
+        } else {
+            throw ChannelContextError.CouldNotFindChannelContextInThisThread
+        }
+        
+
+    }
+    
+    
     func cachedSubContainer(for container: Container, on worker: Worker) -> SubContainer {
         let subContainer: SubContainer
         if let existing = threadDictionary["subcontainer"] as? SubContainer {
@@ -209,6 +270,12 @@ extension Thread {
             threadDictionary["subcontainer"] = new
         }
         return subContainer
+    }
+    
+    public var subContainer: SubContainer? {
+        get {
+            return threadDictionary["subcontainer"] as? SubContainer
+        }
     }
 }
 

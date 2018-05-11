@@ -2,7 +2,7 @@ import Async
 import Foundation
 import Bits
 import NIO
-
+import Vapor
 
 
 
@@ -278,7 +278,6 @@ struct NatsParser {
         case .OP_PING:
             switch value {
             case .newLine:
-                /// TODO: PROCESS PING
                 proto = .PING
                 state = .OP_START
                 reset()
@@ -304,7 +303,6 @@ struct NatsParser {
         case .OP_PONG:
             switch value {
             case .newLine:
-                // TODO: PROCESS PONG
                 proto = .PING
                 state = .OP_START
                 reset()
@@ -376,7 +374,7 @@ struct NatsParser {
     
     func completeMessage() -> MSG? {
         guard let localHeaders = headers else {return nil}
-        let message = MSG(headers: localHeaders, payload: payload, sub: nil, container: nil)
+        let message = MSG(headers: localHeaders, payload: payload, sub: nil)
         return message
     }
     
@@ -404,7 +402,7 @@ struct NatsParser {
     
     func messageFatal(){
         // TODO: FATAL ERROR IN PROTOCOL
-        fatalError()
+        fatalError("ERROR PARSING NAT MESSAGE")
     }
     
     enum ParseResult {
@@ -447,7 +445,5 @@ struct NatsParser {
     }
     
 }
-
-
 
 

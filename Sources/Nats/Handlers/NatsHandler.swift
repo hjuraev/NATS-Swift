@@ -9,59 +9,38 @@ import Foundation
 import NIO
 import Async
 
+protocol NatsHandlerDelegate {
+    func added(ctx: ChannelHandlerContext)
+    func open(ctx: ChannelHandlerContext)
+    func close(ctx: ChannelHandlerContext)
+    func error(ctx: ChannelHandlerContext, error: Error)
+    func message(ctx: ChannelHandlerContext, message: NatsMessage)
+}
+
+
 class NatsHandler: ChannelInboundHandler {
     
     /// See `ChannelInboundHandler.InboundIn`
     public typealias InboundIn = NatsMessage
     
     /// See `ChannelInboundHandler.OutboundOut`
-    public typealias OutboundOut = String
-    
-    /// Queue of input handlers and promises. Oldest (current) handler and promise are at the end of the array.
-    private var inputQueue: [NatsMessage]
-    
-    /// Queue of output. Oldest objects are at the end of the array (output is dequeued with `popLast()`)
-    private var outputQueue: [String]
-    
-    
-    var currentCtx: ChannelHandlerContext?
+    public typealias OutboundOut = Data
 
+    var delegate: NatsHandlerDelegate?
     
     public var onNatsMessage: ((InboundIn) -> ())?
-    public var onClose: (() -> ())?
-    public var onOpen: (() -> ())
 
-    private var errorHandler: (Error) -> ()
-
-    
-    
-    /// This handler's event loop.
-    private let eventLoop: EventLoop
-    
-    /// A write-ready context waiting.
-    
-    /// Handles errors that happen when no input promise is waiting.
-    
-    /// Create a new `QueueHandler` on the supplied worker.
-    public init(on worker: Worker, onError: @escaping (Error) -> (), onOpen: @escaping () -> ()) {
-        self.inputQueue = []
-        self.outputQueue = []
-        self.eventLoop = worker.eventLoop
-        self.errorHandler = onError
-        self.onOpen = onOpen
+    public init() {
     }
-    
     
     public func handlerAdded(ctx: ChannelHandlerContext) {
-        self.currentCtx = ctx
+        debugPrint(ctx.handler)
+        delegate?.added(ctx: ctx)
     }
-    
     
     func handlerRemoved(ctx: ChannelHandlerContext) {
-        onClose?()
+        delegate?.close(ctx: ctx)
     }
-    
-
     
     /// Enqueue new output to the handler.
     ///
@@ -70,41 +49,26 @@ class NatsHandler: ChannelInboundHandler {
     ///     - onInput: A callback that will accept new input (usually responses to the output you enqueued)
     ///                The callback will continue to be called until you return `true` or an error is thrown.
     /// - returns: A future signal. Will be completed when `onInput` returns `true` or throws an error.
-    public func enqueue(_ message: String) -> Bool {
-        guard let ctx = currentCtx else {return false}
-        outputQueue.insert(message, at: 0)
-            ctx.eventLoop.execute {
-                self.writeOutputIfEnqueued(ctx: ctx)
-            }
-        return true
-    }
     
-    /// Triggers a context write if any output is enqueued.
-    private func writeOutputIfEnqueued(ctx: ChannelHandlerContext) {
-        if let message = outputQueue.popLast() {
-                ctx.write(wrapOutboundOut(message), promise: nil)
-            ctx.flush()
-            self.writeOutputIfEnqueued(ctx: ctx)
+    public func write(ctx:ChannelHandlerContext, data: Data) {
+        if ctx.channel.isWritable {
+            ctx.writeAndFlush(wrapOutboundOut(data), promise: nil)
         }
     }
-    
-    /// MARK: ChannelInboundHandler conformance
     
     /// See `ChannelInboundHandler.channelRead(ctx:data:)`
     public func channelRead(ctx: ChannelHandlerContext, data: NIOAny) {
         let msg = unwrapInboundIn(data) as NatsMessage
-        onNatsMessage?(msg)
+        delegate?.message(ctx: ctx, message: msg)
     }
     
     /// See `ChannelInboundHandler.channelActive(ctx:)`
     public func channelActive(ctx: ChannelHandlerContext) {
-        writeOutputIfEnqueued(ctx: ctx)
-        onOpen()
+        delegate?.open(ctx: ctx)
     }
     
     /// See `ChannelInboundHandler.errorCaught(error:)`
     public func errorCaught(ctx: ChannelHandlerContext, error: Error) {
-        errorHandler(error)
+        delegate?.error(ctx: ctx, error: error)
     }
 }
-

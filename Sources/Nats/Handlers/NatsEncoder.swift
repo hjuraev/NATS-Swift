@@ -10,11 +10,11 @@ import NIO
 import Bits
 
 class NatsEncoder: MessageToByteEncoder{
-    typealias OutboundIn = String
+    typealias OutboundIn = Data
 
     
     func encode(ctx: ChannelHandlerContext, data: NatsEncoder.OutboundIn, out: inout ByteBuffer) throws {
-        out.write(string: data)
+        out.write(bytes: data)
     }
     
 }

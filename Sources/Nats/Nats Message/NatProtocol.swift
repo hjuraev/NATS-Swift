@@ -22,7 +22,7 @@ public struct NatsSubscription {
     public let queueGroup: String
     fileprivate(set) var count: UInt
     public var callback: ((MSG) -> ())?
-    public func sub() -> String {
+    public func sub() -> Data {
         let group: () -> String = {
             if self.queueGroup.count > 0 {
                 return "\(self.queueGroup) "
@@ -30,17 +30,17 @@ public struct NatsSubscription {
             return self.queueGroup
         }
         
-        return "\(Proto.SUB.rawValue) \(subject) \(group())\(id.uuidString)\r\n"
+        return "\(Proto.SUB.rawValue) \(subject) \(group())\(id.uuidString)\r\n".data(using: .utf8) ?? Data()
     }
     
-    public func unsub(_ max: UInt32) -> String {
+    public func unsub(_ max: UInt32) -> Data {
         let wait: () -> String = {
             if max > 0 {
                 return " \(max)"
             }
             return ""
         }
-        return "\(Proto.UNSUB.rawValue) \(id)\(wait)\r\n"
+        return "\(Proto.UNSUB.rawValue) \(id)\(wait)\r\n".data(using: .utf8) ?? Data()
     }
     
     mutating func counter() {
