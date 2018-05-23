@@ -95,7 +95,6 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     
     
     func message(ctx: ChannelHandlerContext, message: NatsMessage) {
-        print(message)
         switch message {
         case .OK:
             break
@@ -113,7 +112,6 @@ public final class NatsClient:NatsHandlerDelegate, Container {
             print(Thread.current.threadDictionary)
             break
         case .MSG(let message):
-            print(message.headers.subject)
             let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
             
             if let storage = try? subContainer.make(NatsResponseStorage.self) {
