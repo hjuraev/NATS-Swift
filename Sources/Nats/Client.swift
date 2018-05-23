@@ -59,7 +59,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     
     public var serviceCache: ServiceCache
     
-    public var delegate: NatsClientDelegate
+    public var delegate: NatsClientDelegate?
 
     private let handler: NatsHandler
     
@@ -67,7 +67,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     
     fileprivate let threadGroup: MultiThreadedEventLoopGroup
     
-    public init(natsConfig: NatsClientConfig, _ config: inout Config, _ env: inout Environment, _ services: inout Services, delegate: NatsClientDelegate) {
+    public init(natsConfig: NatsClientConfig, _ config: inout Config, _ env: inout Environment, _ services: inout Services) {
         threadGroup = MultiThreadedEventLoopGroup(numThreads: natsConfig.threadNum)
         let handler = NatsHandler()
         self.handler = handler
@@ -86,7 +86,6 @@ public final class NatsClient:NatsHandlerDelegate, Container {
         self.environment = env
         self.services = services
         self.serviceCache = .init()
-        self.delegate = delegate
         self.handler.delegate = self
     }
 
@@ -105,7 +104,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
             
             break
         case .ERR(let error):
-            delegate.error(ctx: ctx, error: error)
+            delegate?.error(ctx: ctx, error: error)
             break
         case .INFO(let server):
             self.server.append(server)
@@ -134,11 +133,11 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     func open(ctx: ChannelHandlerContext) {
         Thread.current.threadDictionary["ctx"] = ctx
 
-        delegate.open(ctx: ctx)
+        delegate?.open(ctx: ctx)
     }
     
     func close(ctx: ChannelHandlerContext) {
-        delegate.close(ctx: ctx)
+        delegate?.close(ctx: ctx)
 
     }
     
