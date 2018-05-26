@@ -101,14 +101,12 @@ public final class NatsClient:NatsHandlerDelegate, Container {
             self.processPing(ctx: ctx)
             break
         case .PONG:
-            
             break
         case .ERR(let error):
             delegate?.error(ctx: ctx, error: error)
             break
         case .INFO(let server):
             self.server.append(server)
-            print(Thread.current.threadDictionary)
             break
         case .MSG(let message):
             let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
@@ -133,6 +131,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     func open(ctx: ChannelHandlerContext) {
         Thread.current.threadDictionary["ctx"] = ctx
 
+        debugPrint("NATS open on \(ctx.channel.localAddress?.description ?? "")")
         delegate?.open(ctx: ctx)
     }
     
@@ -152,7 +151,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     }
 
 
-    open func subscribe(_ subject: String, queueGroup: String = "NATS-GROUP", callback: ((MSG) -> ())?) throws -> Void {
+    open func subscribe(_ subject: String, queueGroup: String = "", callback: ((MSG) -> ())?) throws -> Void {
         let ctx = try Thread.current.cachedChannelHandler()
         let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
 
