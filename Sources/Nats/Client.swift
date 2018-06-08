@@ -106,7 +106,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
             delegate?.error(ctx: ctx, error: error)
             break
         case .INFO(let server):
-            self.server.append(server)
+//            self.server.append(server)
             break
         case .MSG(let message):
             let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
