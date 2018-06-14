@@ -63,16 +63,16 @@ public enum Proto: String, Codable {
 }
 
 public struct Server: Codable {
-    public let server_id: String
-    public let version: String
-    public let go: String
-    public let host: String
-    public let port: Int
-    public let auth_required: Bool
-    public let ssl_required: Bool
-    public let tls_required: Bool
-    public let tls_verify: Bool
-    public let max_payload: Int
-    public let connect_urls: [String]
+    public let server_id: String?
+    public let version: String?
+    public let go: String?
+    public let host: String?
+    public let port: Int?
+    public let auth_required: Bool?
+    public let ssl_required: Bool?
+    public let tls_required: Bool?
+    public let tls_verify: Bool?
+    public let max_payload: Int?
+    public let connect_urls: [String]?
 }
 

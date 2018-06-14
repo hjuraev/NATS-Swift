@@ -96,6 +96,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     func message(ctx: ChannelHandlerContext, message: NatsMessage) {
         switch message {
         case .OK:
+            debugPrint("OK")
             break
         case .PING:
             self.processPing(ctx: ctx)
@@ -151,7 +152,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     }
 
 
-    open func subscribe(_ subject: String, queueGroup: String = "", callback: ((MSG) -> ())?) throws -> Void {
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: ((MSG) -> ())?) throws -> Void {
         let ctx = try Thread.current.cachedChannelHandler()
         let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
 
@@ -169,7 +170,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
 
 
     
-    open func unsubscribe(_ subject: String, max: UInt32 = 0) throws {
+    public func unsubscribe(_ subject: String, max: UInt32 = 0) throws {
         let ctx = try Thread.current.cachedChannelHandler()
         let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
         guard let storage = try? subContainer.make(NatsResponseStorage.self) else {return}
@@ -185,7 +186,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
      * publish to subject
      *
      */
-    open func publish(_ subject: String, payload: String) throws {
+    public func publish(_ subject: String, payload: String) throws {
         let pub: () -> Data = {
             if let data = payload.data(using: String.Encoding.utf8) {
                 return "\(Proto.PUB.rawValue) \(subject) \(data.count)\r\n\(payload)\r\n".data(using: .utf8) ?? Data()
@@ -201,7 +202,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
      * reply to id in subject
      *
      */
-    open func request(_ subject: String, payload: String, timeout: Int) throws -> EventLoopFuture<MSG> {
+    public func request(_ subject: String, payload: String, timeout: Int) throws -> EventLoopFuture<MSG> {
         let uuid = UUID()
         
         let ctx = try Thread.current.cachedChannelHandler()
