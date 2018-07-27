@@ -96,7 +96,6 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     func message(ctx: ChannelHandlerContext, message: NatsMessage) {
         switch message {
         case .OK:
-            debugPrint("OK")
             break
         case .PING:
             self.processPing(ctx: ctx)
@@ -107,7 +106,6 @@ public final class NatsClient:NatsHandlerDelegate, Container {
             delegate?.error(ctx: ctx, error: error)
             break
         case .INFO(let server):
-//            self.server.append(server)
             break
         case .MSG(let message):
             let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
