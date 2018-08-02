@@ -68,7 +68,7 @@ public final class NatsClient:NatsHandlerDelegate, Container {
     fileprivate let threadGroup: MultiThreadedEventLoopGroup
     
     public init(natsConfig: NatsClientConfig, _ config: inout Config, _ env: inout Environment, _ services: inout Services) {
-        threadGroup = MultiThreadedEventLoopGroup(numThreads: natsConfig.threadNum)
+        threadGroup = MultiThreadedEventLoopGroup(numberOfThreads: natsConfig.threadNum)
         let handler = NatsHandler()
         self.handler = handler
 
@@ -105,13 +105,14 @@ public final class NatsClient:NatsHandlerDelegate, Container {
         case .ERR(let error):
             delegate?.error(ctx: ctx, error: error)
             break
-        case .INFO(let server):
+        case .INFO(_):
             break
         case .MSG(let message):
             let subContainer = Thread.current.cachedSubContainer(for: self, on: ctx.eventLoop)
             
             if let storage = try? subContainer.make(NatsResponseStorage.self) {
                 if !storage.requestsStorage.isEmpty, let request = storage.requestsStorage[message.headers.sid] {
+                    request.scheduler?.cancel()
                     request.promise.succeed(result: message)
                     storage.requestsStorage.removeValue(forKey: message.headers.sid)
                 } else if let sub = storage.subscriptions[message.headers.sid] {
