@@ -11,7 +11,7 @@ import Bits
 
 class NatsEncoder: MessageToByteEncoder{
     typealias OutboundIn = Data
-
+    
     
     func encode(ctx: ChannelHandlerContext, data: NatsEncoder.OutboundIn, out: inout ByteBuffer) throws {
         out.write(bytes: data)

@@ -11,13 +11,13 @@ class NatsDecoder: ByteToMessageDecoder {
     
     
     public typealias InboundIn = ByteBuffer
-    public typealias InboundOut = NatsMessage
-    public typealias OutboundOut = NatsMessage
+    public typealias InboundOut = NatsMessages
+    public typealias OutboundOut = NatsMessages
     public var cumulationBuffer: ByteBuffer? = nil
     
     var parser = NatsParser()
     private var shouldKeepParsing = true
-
+    
     
     func decode(ctx: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         
@@ -82,7 +82,7 @@ struct NatsParser {
                 state = .OP_I
             default:
                 messageFatal()
-
+                
                 // ERROR
                 break
             }
@@ -114,7 +114,7 @@ struct NatsParser {
                 state = .OP_START
                 reset()
                 return .result(.OK)
-
+                
             default:
                 break
             }
@@ -248,7 +248,7 @@ struct NatsParser {
                 } else {
                     fatalError()
                 }
-                /// MESSAGE COMPLETED
+            /// MESSAGE COMPLETED
             default:
                 break
             }
@@ -282,7 +282,7 @@ struct NatsParser {
                 state = .OP_START
                 reset()
                 return .result(.PING)
-                /// PING RECEIVED
+            /// PING RECEIVED
             default:
                 break
             }
@@ -341,11 +341,11 @@ struct NatsParser {
         case .OP_INFO_SPC:
             switch value {
             case .space, .horizontalTab:
-
+                
                 break
             default:
                 state = .INFO_ARG
-
+                
                 break
             }
         case .INFO_ARG:
@@ -355,14 +355,14 @@ struct NatsParser {
             case .newLine:
                 proto = .INFO
                 state = .OP_START
-                    do {
-                        let newServer: Data = rawValue.advanced(by: 5)
-                        let decoder = JSONDecoder()
-                        let server = try decoder.decode(Server.self, from: newServer)
-                        reset()
-                        return .result(.INFO(server))
-                    }catch let error {
-                        debugPrint(error)
+                do {
+                    let newServer: Data = rawValue.advanced(by: 5)
+                    let decoder = JSONDecoder()
+                    let server = try decoder.decode(Server.self, from: newServer)
+                    reset()
+                    return .result(.INFO(server))
+                }catch let error {
+                    debugPrint(error)
                 }
             default:
                 
@@ -384,12 +384,12 @@ struct NatsParser {
             switch components.count {
             case 3:
                 if let uuid = UUID(uuidString: components[1]) {
-                    let header = MSG.Headers(subject: components[0], sid: uuid, replay: nil, size: Int(components[2]) ?? 0)
+                    let header = MSG.Headers(subject: components[0], sid: uuid, reply: nil, size: Int(components[2]) ?? 0)
                     return header
                 }
             case 4:
                 if let uuid = UUID(uuidString: components[1]) {
-                    let header = MSG.Headers(subject: components[0], sid: uuid, replay: components[2], size: Int(components[3]) ?? 0)
+                    let header = MSG.Headers(subject: components[0], sid: uuid, reply: components[2], size: Int(components[3]) ?? 0)
                     return header
                 }
             default:
@@ -408,7 +408,7 @@ struct NatsParser {
     enum ParseResult {
         case insufficientData
         case continueParsing
-        case result(NatsMessage)
+        case result(NatsMessages)
     }
     
     enum MESSAGE_STATE {

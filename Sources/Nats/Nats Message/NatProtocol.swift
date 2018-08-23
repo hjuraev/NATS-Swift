@@ -12,7 +12,7 @@ import NIO
 public struct NatsRequest {
     public let id: UUID
     public let subject: String
-    public let promise: EventLoopPromise<MSG>
+    public let promise: EventLoopPromise<NatsMessage>
     public let scheduler: Scheduled<()>?
 }
 
@@ -21,7 +21,7 @@ public struct NatsSubscription {
     public let subject: String
     public let queueGroup: String
     fileprivate(set) var count: UInt
-    public var callback: ((MSG) -> ())?
+    public var callback: ((NatsMessage) -> ())?
     public func sub() -> Data {
         let group: () -> String = {
             if self.queueGroup.count > 0 {
@@ -76,3 +76,45 @@ public struct Server: Codable {
     public let connect_urls: [String]?
 }
 
+
+public struct NatsGeneralError: Debuggable {
+    /// See `Debuggable`.
+    public static let readableName = "Vapor Error"
+    
+    /// See `Debuggable`.
+    public let identifier: String
+    
+    /// See `Debuggable`.
+    public var reason: String
+    
+    /// See `Debuggable`.
+    public var sourceLocation: SourceLocation?
+    
+    /// See `Debuggable`.
+    public var stackTrace: [String]
+    
+    /// See `Debuggable`.
+    public var suggestedFixes: [String]
+    
+    /// See `Debuggable`.
+    public var possibleCauses: [String]
+    
+    /// Creates a new `VaporError`.
+    public init(
+        identifier: String,
+        reason: String,
+        suggestedFixes: [String] = [],
+        possibleCauses: [String] = [],
+        file: String = #file,
+        function: String = #function,
+        line: UInt = #line,
+        column: UInt = #column
+        ) {
+        self.identifier = identifier
+        self.reason = reason
+        self.sourceLocation = SourceLocation(file: file, function: function, line: line, column: column, range: nil)
+        self.stackTrace = VaporError.makeStackTrace()
+        self.suggestedFixes = suggestedFixes
+        self.possibleCauses = possibleCauses
+    }
+}

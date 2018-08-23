@@ -14,22 +14,22 @@ protocol NatsHandlerDelegate {
     func open(ctx: ChannelHandlerContext)
     func close(ctx: ChannelHandlerContext)
     func error(ctx: ChannelHandlerContext, error: Error)
-    func message(ctx: ChannelHandlerContext, message: NatsMessage)
+    func message(ctx: ChannelHandlerContext, message: NatsMessages)
 }
 
 
 class NatsHandler: ChannelInboundHandler {
     
     /// See `ChannelInboundHandler.InboundIn`
-    public typealias InboundIn = NatsMessage
+    public typealias InboundIn = NatsMessages
     
     /// See `ChannelInboundHandler.OutboundOut`
     public typealias OutboundOut = Data
-
+    
     var delegate: NatsHandlerDelegate?
     
     public var onNatsMessage: ((InboundIn) -> ())?
-
+    
     public init() {
     }
     
@@ -50,15 +50,13 @@ class NatsHandler: ChannelInboundHandler {
     ///                The callback will continue to be called until you return `true` or an error is thrown.
     /// - returns: A future signal. Will be completed when `onInput` returns `true` or throws an error.
     
-    public func write(ctx:ChannelHandlerContext, data: Data) {
-        if ctx.channel.isWritable {
-            ctx.writeAndFlush(wrapOutboundOut(data), promise: nil)
-        }
+    public func write(ctx:ChannelHandlerContext, data: Data) -> EventLoopFuture<Void>{
+        return ctx.writeAndFlush(wrapOutboundOut(data))
     }
     
     /// See `ChannelInboundHandler.channelRead(ctx:data:)`
     public func channelRead(ctx: ChannelHandlerContext, data: NIOAny) {
-        let msg = unwrapInboundIn(data) as NatsMessage
+        let msg = unwrapInboundIn(data) as NatsMessages
         delegate?.message(ctx: ctx, message: msg)
     }
     

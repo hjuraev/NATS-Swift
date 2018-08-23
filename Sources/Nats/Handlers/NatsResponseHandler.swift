@@ -8,9 +8,10 @@
 import Foundation
 import Vapor
 
-public class NatsResponseStorage: Service {
+public final class NatsResponseStorage: Service{
+    
     var subscriptions = [UUID:NatsSubscription]()
     var requestsStorage = [UUID:NatsRequest]()
-
+    var servers: [Server] = []
     public init() {}
 }
