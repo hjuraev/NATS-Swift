@@ -32,13 +32,7 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
     
     
     public func log(_ string: String, at level: LogLevel, file: String, function: String, line: UInt, column: UInt) {
-        let text: String = """
-        + "[ \(level) ]"
-        + " "
-        + \(string)
-        + " "
-        + "(\(file):\(line))"
-        """
+        let text: String = "[ \(level) ] \(string)  --  (\(file):\(line))"
         debugPrint(text)
     }
     
