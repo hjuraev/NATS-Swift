@@ -28,10 +28,19 @@ public protocol NatsResponder  {
     func unsubscribe()
 }
 
-public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStringConvertible, CustomDebugStringConvertible, NatsResponder  {
+public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStringConvertible, CustomDebugStringConvertible, NatsResponder, Logger  {
     
     
-    
+    public func log(_ string: String, at level: LogLevel, file: String, function: String, line: UInt, column: UInt) {
+        let text: String = """
+        + "[ \(level) ]"
+        + " "
+        + \(string)
+        + " "
+        + "(\(file):\(line))"
+        """
+        debugPrint(text)
+    }
     
     public func publish(_ subject: String, payload: String) throws -> EventLoopFuture<Void> {
         let pub: () -> Data = {
