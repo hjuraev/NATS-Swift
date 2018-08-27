@@ -99,7 +99,7 @@ public final class NatsClient:NatsHandlerDelegate, Service {
         
         switch message {
         case .OK:
-            debugPrint("OK")
+//            debugPrint("OK")
             break
         case .PING:
             self.processPing(ctx: ctx)
