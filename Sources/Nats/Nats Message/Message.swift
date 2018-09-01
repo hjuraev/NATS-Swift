@@ -169,7 +169,6 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
     
     
     deinit {
-        debugPrint("DEINITIALIZING NATS MESSAGE")
         if hasActiveConnections {
             try! privateContainer.releaseCachedConnections()
         }
