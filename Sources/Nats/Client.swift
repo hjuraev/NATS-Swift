@@ -167,7 +167,7 @@ public final class NatsClient:NatsHandlerDelegate, Service {
     
     
     fileprivate func processPing(ctx:ChannelHandlerContext) {
-        self.handler.write(ctx: ctx, data: "\(Proto.PONG.rawValue)\r\n".data(using: .utf8) ?? Data())
+        _ = self.handler.write(ctx: ctx, data: "\(Proto.PONG.rawValue)\r\n".data(using: .utf8) ?? Data())
     }
     
     
@@ -185,10 +185,7 @@ public final class NatsClient:NatsHandlerDelegate, Service {
         let sub = NatsSubscription(id: uuid, subject: subject, queueGroup: queueGroup, count: 0, callback: callback)
         
         storage.subscriptions.updateValue(sub, forKey: uuid)
-        container.eventLoop.execute {
-            print(Thread.current.name)
-        }
-        self.handler.write(ctx: ctx, data: sub.sub())
+        _ = self.handler.write(ctx: ctx, data: sub.sub())
     }
     
     
@@ -203,7 +200,7 @@ public final class NatsClient:NatsHandlerDelegate, Service {
         guard let sub = storage.subscriptions.filter({ $0.value.subject == subject }).first else { return }
         storage.subscriptions.removeValue(forKey: sub.key)
         
-        self.handler.write(ctx: ctx, data: sub.value.unsub(max))
+        _ = self.handler.write(ctx: ctx, data: sub.value.unsub(max))
     }
     
     //    /**
