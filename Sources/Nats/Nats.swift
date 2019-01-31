@@ -70,6 +70,9 @@ public final class NATS: Service {
     }
     
     public func getClient() -> EventLoopFuture<NATS> {
+        if isActive {
+            return container.eventLoop.future(self)
+        }
         switch config.natsType {
         case .client:
             let bootstrap = ClientBootstrap(group: container.eventLoop)
@@ -97,9 +100,8 @@ public final class NATS: Service {
             let error = NatsGeneralError(identifier: "Incorrectly configured", reason: "If you want to start it as client, please specify it in config instance")
             return container.eventLoop.newFailedFuture(error: error)
         }
-        
-        
     }
+    
     public func startServer() -> EventLoopFuture<Void> {
         let threadGroup: MultiThreadedEventLoopGroup
         let threadCount: Int
