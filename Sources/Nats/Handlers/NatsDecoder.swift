@@ -20,8 +20,6 @@ class NatsDecoder: ByteToMessageDecoder {
     
     
     func decode(ctx: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
-        
-        
         parseLoop: while self.shouldKeepParsing {
             switch parser.parse(buffer: &buffer){
             case .result(let message):
@@ -64,8 +62,9 @@ struct NatsParser {
     
     
     mutating func parse(buffer: inout ByteBuffer) -> ParseResult {
-        guard let value = buffer.readBytes(length: 1)?.first else {return .insufficientData}
-        rawValue.append(contentsOf: [value])
+        
+        guard let value = buffer.readInteger(as: UInt8.self) else {return .insufficientData}
+        rawValue.append(value)
         switch state {
         case .OP_START:
             

@@ -11,7 +11,7 @@ import Vapor
 public struct MSG {
     public let headers: Headers
     public let payload: Data
-    public let sub: NatsSubscription?
+    public let sub: NatsCallbacks?
     
     public struct Headers: Codable {
         public let subject: String
@@ -23,12 +23,16 @@ public struct MSG {
 }
 
 public protocol NatsResponder  {
-    func publish(_ subject: String, payload: String) throws -> EventLoopFuture<Void>
-    func request(_ subject: String, payload: String, timeout: Int) throws -> EventLoopFuture<NatsMessage>
+    func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void>
+    func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage>
     func unsubscribe()
 }
 
 public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStringConvertible, CustomDebugStringConvertible, NatsResponder, Logger  {
+    public func unsubscribe() {
+        
+    }
+    
     
     
     public func log(_ string: String, at level: LogLevel, file: String, function: String, line: UInt, column: UInt) {
@@ -36,66 +40,91 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
         debugPrint(text)
     }
     
-    public func publish(_ subject: String, payload: String) throws -> EventLoopFuture<Void> {
-        let pub: () -> Data = {
-            if let data = payload.data(using: String.Encoding.utf8) {
-                return "\(Proto.PUB.rawValue) \(subject) \(data.count)\r\n\(payload)\r\n".data(using: .utf8) ?? Data()
-            }
-            return Data()
-        }
+    
+    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return handler.write(ctx: ctx, data: pub())
+        return try handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     
-    public func request(_ subject: String, payload: String, timeout: Int) throws -> EventLoopFuture<NatsMessage> {
-        let uuid = UUID()
-        
-        let promise = ctx.eventLoop.newPromise(NatsMessage.self)
-        
-        let storage = try sharedContainer.make(NatsResponseStorage.self)
-        
-        let schedule = ctx.eventLoop.scheduleTask(in: .seconds(timeout), {
-            storage.requestsStorage.removeValue(forKey: uuid)
-            let error = NatsGeneralError(identifier: "NATS TIMEOUT", reason: "TIMEOUT SUBJECT: \(subject)")
-            promise.fail(error: error)
-            return
-        })
-        
-        let sub = "\(Proto.SUB.rawValue) \(uuid.uuidString) \(uuid.uuidString)\r\n\(Proto.UNSUB.rawValue) \(uuid.uuidString) \(1)\r\n".data(using: .utf8)!
-        
-        
-        
-        let request = NatsRequest(id: uuid, subject: subject, promise: promise, scheduler: schedule)
-        
-        storage.requestsStorage.updateValue(request, forKey: uuid)
-        let requestSocket: () -> Data = {
-            if let data = payload.data(using: String.Encoding.utf8) {
-                return "\(Proto.PUB.rawValue) \(subject) \(uuid.uuidString) \(data.count)\r\n\(payload)\r\n".data(using: .utf8) ?? Data()
-            }
-            return Data()
-        }
-        
-        let finalData = sub + requestSocket()
-        
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void>  {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        handler.write(ctx: ctx, data: finalData).catch { error in
-            debugPrint(error)
+        return try handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
+    }
+    
+    
+    
+    public func unsubscribe(_ subject: String, max: UInt32 = 0) throws -> EventLoopFuture<Void> {
+        guard let handler = ctx.handler as? NatsHandler else {
+            let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
+            return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return promise.futureResult
+        return try handler.unsubscribe(subject, max: max)
     }
     
-    public func unsubscribe() {
-        // TODO: IMPLEMENT ME
+    /**
+     * publish(subject: String) -> Void
+     * publish to subject
+     *
+     */
+    
+    public func streamingPublish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
+        guard let handler = ctx.handler as? NatsHandler else {
+            let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
+            return ctx.eventLoop.newFailedFuture(error: error)
+        }
+        return try handler.streamingPub(subject, payload:payload)
+    }
+    
+    public func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
+        guard let handler = ctx.handler as? NatsHandler else {
+            let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
+            return ctx.eventLoop.newFailedFuture(error: error)
+        }
+        return try handler.publish(subject, payload: payload)
+    }
+    
+    /**
+     * reply(subject: String, replyto: String, payload: String)  -> Void
+     * reply to id in subject
+     *
+     */
+    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage> {
+        guard let handler = ctx.handler as? NatsHandler else {
+            let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
+            return ctx.eventLoop.newFailedFuture(error: error)
+        }
+        return try handler.request(subject, payload: payload, timeout: timeout, numberOfResponse: numberOfResponse)
     }
     
     
     
+    public func steamingReply(payload: Data) throws -> EventLoopFuture<Void> {
+        guard let streamingPayload = self.streamingPayload, !streamingPayload.reply.isEmpty else {
+            let error = NatsGeneralError(identifier: "Not steaming message", reason: "This message is not streaming")
+            throw error
+        }
+        
+        guard !streamingPayload.reply.isEmpty else {
+            let error = NatsGeneralError(identifier: "Replay string not found", reason: "This message does not have reply subject")
+            throw error
+        }
+        
+        return try self.publish(streamingPayload.reply, payload: payload)
+    }
+    
+    public func reply(payload: Data) throws -> EventLoopFuture<Void> {
+        guard let replyTopic = self.headers.reply else {
+            let error = NatsGeneralError(identifier: "REPLY HEADERS DOES NOT EXISTS", reason: "THIS MESSAGE IS NOT A REQUEST, NO NEED TO RESPOND")
+            throw error
+        }
+        return try self.publish(replyTopic, payload: payload)
+    }
     
     public static var aliasedContainer: KeyPath<NatsMessage, Container>  = \.sharedContainer
     
@@ -112,11 +141,13 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
     public let ts: Date = Date()
     public let headers: MSG.Headers
     public let payload: Data
-    public let sub: NatsSubscription?
+    public let streamingPayload: Pb_MsgProto?
+    public let sub: NatsCallbacks?
     
-    init(msg: MSG, container: Container, ctx: ChannelHandlerContext) {
+    init(msg: MSG, container: Container, ctx: ChannelHandlerContext, streamingPayload: Pb_MsgProto? = nil) {
         self.headers = msg.headers
         self.payload = msg.payload
+        self.streamingPayload = streamingPayload
         self.sub = msg.sub
         self.sharedContainer = container
         self.privateContainer = container.subContainer(on: container)
@@ -159,7 +190,6 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
         SIZE:       \(headers.size)\n
         PAYLOAD: \(String(bytes: payload, encoding: .utf8) ?? "PAYLOAD IS NOT UTF8")\n
         """
-        
     }
     
     public var debugDescription: String {
@@ -181,17 +211,11 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
 
 
 
-enum NatsMessages {
-    case MSG(MSG)
-    case INFO(Server)
-    case OK
-    case ERR(NatsError)
-    case PONG
-    case PING
-}
 
 
-public struct NatsError {
+
+public struct NatsError: Error {
     public let description: String?
 }
+
 

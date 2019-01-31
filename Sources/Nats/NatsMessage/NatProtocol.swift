@@ -8,20 +8,92 @@
 import Vapor
 import Foundation
 import NIO
+import SwiftProtobuf
 
-public struct NatsRequest {
-    public let id: UUID
-    public let subject: String
-    public let promise: EventLoopPromise<NatsMessage>
-    public let scheduler: Scheduled<()>?
+public enum retunValue {
+    case MSG(((NatsMessage) -> ()))
+    case REQ(NatsRequest)
+    // STREAMING
+    case pubAck(PubMSG)
+    case StreamingMSG(StreamingMSG)
 }
 
-public struct NatsSubscription {
+public class StreamingMSG {
+    public let callback: (((NatsMessage) -> ()))
+    public let ackInbox: String
+    
+    init(callback: @escaping (((NatsMessage) -> ())), ackInbox: String) {
+        self.callback = callback
+        self.ackInbox = ackInbox
+    }
+}
+
+public class PubMSG {
+    let pubMSG: Pb_PubMsg
+    let uuid: UUID
+    let task: RepeatedTask
+    
+    init(pubMSG: Pb_PubMsg, uuid: UUID, task: RepeatedTask) {
+        self.pubMSG = pubMSG
+        self.uuid = uuid
+        self.task = task
+    }
+}
+
+public class NatsRequest {
+    
+    public let promise: EventLoopPromise<NatsMessage>
+    public let scheduler: Scheduled<()>?
+    public let numberOfResponse: NumberOfResponse
+    init(promise: EventLoopPromise<NatsMessage>, scheduler: Scheduled<()>?, numberOfResponse: NumberOfResponse){
+        self.promise = promise
+        self.scheduler = scheduler
+        self.numberOfResponse = numberOfResponse
+    }
+    
+    public enum NumberOfResponse {
+        case single
+        case multiple(MultipleResponses)
+        case unlimited
+    }
+    
+    public class MultipleResponses {
+        let count: Int
+        private(set) var received: Int = 0
+        
+        init(count: Int) {
+            self.count = count
+        }
+        
+        func counter() -> Bool {
+            if count > received {
+                received = received+1
+                return true
+            } else {
+                return false
+            }
+        }
+    }
+    
+    
+}
+
+
+public class NatsCallbacks {
     public let id: UUID
     public let subject: String
     public let queueGroup: String
-    fileprivate(set) var count: UInt
-    public var callback: ((NatsMessage) -> ())?
+    fileprivate(set) var count: UInt = 0
+    public var callback: retunValue
+    
+    init(id: UUID, subject: String, queueGroup: String, callback: retunValue) {
+        self.id = id
+        self.subject = subject
+        self.queueGroup = queueGroup
+        self.callback = callback
+    }
+    
+    
     public func sub() -> Data {
         let group: () -> String = {
             if self.queueGroup.count > 0 {
@@ -43,7 +115,7 @@ public struct NatsSubscription {
         return "\(Proto.UNSUB.rawValue) \(id)\(wait)\r\n".data(using: .utf8) ?? Data()
     }
     
-    mutating func counter() {
+    func counter() {
         self.count += 1
     }
 }
