@@ -69,33 +69,29 @@ public final class NATS: Service {
         return handlerCacher.currentValue?.ctx?.channel.isWritable ?? false
     }
     
-    public func getClient() -> EventLoopFuture<NATS> {
+    public func getClient() throws -> EventLoopFuture<NATS> {
         if isActive {
             return container.eventLoop.future(self)
         }
         switch config.natsType {
         case .client:
+            let handler = try NatsHandler(container: self.container, config: self.config)
+
             let bootstrap = ClientBootstrap(group: container.eventLoop)
                 .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
                 .channelInitializer { channel in
-                    return channel.pipeline.addHandlers([NatsEncoder(), NatsDecoder()], first: true)
+                    return channel.pipeline.addHandlers([NatsEncoder(), NatsDecoder()], first: true).then {
+                        channel.pipeline.add(handler: handler)
+                    }
             }
             guard let server = config.natsServers.random else {
                 let error = NatsGeneralError(identifier: "Can not find server in config", reason: "You didnt specify Nats servers in config instance")
                 return container.eventLoop.newFailedFuture(error: error)
             }
-            let completion = bootstrap.connect(host: server.hostname, port: server.port).flatMap({ channel -> EventLoopFuture<Void> in
-                print("GOT CHANNEL")
-                let handler = try NatsHandler(container: self.container, config: self.config)
-                self.handlerCacher.currentValue = handler
-                
-                return channel.pipeline.add(handler: handler)
-            }).catch({ error in
-                debugPrint(error)
-            })
-            return completion.map { Void -> NATS in
+            return bootstrap.connect(host: server.hostname, port: server.port).map(to: NATS.self) { channel in
                 return self
             }
+
         case .server(_):
             let error = NatsGeneralError(identifier: "Incorrectly configured", reason: "If you want to start it as client, please specify it in config instance")
             return container.eventLoop.newFailedFuture(error: error)
@@ -213,9 +209,10 @@ public final class NATS: Service {
         return try handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     
+    @discardableResult
     public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void>  {
         guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
+        return handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     
     public func unsubscribe(_ subject: String, max: UInt32 = 0) throws -> EventLoopFuture<Void> {

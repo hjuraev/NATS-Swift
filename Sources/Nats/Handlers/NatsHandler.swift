@@ -108,7 +108,7 @@ public final class NatsHandler: ChannelInboundHandler {
             self.steamingConnectionRequest = pb_request
             let data = try! pb_request.serializedData()
             do {
-                _ = try subscribe(pb_request.heartbeatInbox) { MSG in
+                subscribe(pb_request.heartbeatInbox) { MSG in
                     _ = try? MSG.reply(payload: "".data(using: .utf8)!)
                 }
                 guard let clusterName = config.clusterName else {
@@ -314,8 +314,9 @@ public final class NatsHandler: ChannelInboundHandler {
         return write(ctx: ctx, data: pubData)
     }
     
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void> {
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+    @discardableResult
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void> {
+        guard let ctx = self.ctx else { fatalError("Cound not find channel context to use")}
         guard subscriptions.filter({ $0.value.subject == subject }).count == 0 else {
             return ctx.eventLoop.newSucceededFuture(result: Void())
         }

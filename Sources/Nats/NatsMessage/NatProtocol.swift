@@ -112,7 +112,7 @@ public class NatsCallbacks {
             }
             return ""
         }
-        return "\(Proto.UNSUB.rawValue) \(id)\(wait)\r\n".data(using: .utf8) ?? Data()
+        return "\(Proto.UNSUB.rawValue) \(id)\(wait())\r\n".data(using: .utf8) ?? Data()
     }
     
     func counter() {

@@ -48,13 +48,13 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
         }
         return try handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
     }
-    
+    @discardableResult
     public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void>  {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
+        return handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     
     

@@ -77,7 +77,7 @@ public init() {
 
 extension Pb_StartPosition: CaseIterable {
   // The compiler won't synthesize support with the UNRECOGNIZED case.
-  static var allCases: [Pb_StartPosition] = [
+    public static var allCases: [Pb_StartPosition] = [
     .newOnly,
     .lastReceived,
     .timeDeltaStart,
