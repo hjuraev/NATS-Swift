@@ -76,6 +76,7 @@ public final class NATS: Service {
         switch config.natsType {
         case .client:
             let handler = try NatsHandler(container: self.container, config: self.config)
+            self.handlerCacher.currentValue = handler
 
             let bootstrap = ClientBootstrap(group: container.eventLoop)
                 .channelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: 1)
