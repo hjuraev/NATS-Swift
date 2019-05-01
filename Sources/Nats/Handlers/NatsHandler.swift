@@ -27,8 +27,6 @@ public final class NatsHandler: ChannelInboundHandler {
     /// See `ChannelInboundHandler.OutboundOut`
     public typealias OutboundOut = Data
     
-    
-    
     private var steamingConnectionRequest: Pb_ConnectRequest?
     private var steamingConnectionResponse: Pb_ConnectResponse?
     
@@ -107,60 +105,65 @@ public final class NatsHandler: ChannelInboundHandler {
             
             self.steamingConnectionRequest = pb_request
             let data = try! pb_request.serializedData()
-            do {
-                subscribe(pb_request.heartbeatInbox) { MSG in
-                    _ = try? MSG.reply(payload: "".data(using: .utf8)!)
-                }
-                guard let clusterName = config.clusterName else {
-                    debugPrint("Nats Cluster Name is not specified. Streaming connection can not be established")
-                    return
-                }
-                _ = try request(clusterName, payload: data, timeout: 3, numberOfResponse: .single).map({ MSG -> Void in
-                    self.steamingConnectionResponse = try Pb_ConnectResponse(serializedData: MSG.payload)
-                    self.delegate.onStreamingOpen(handler: self, ctx: ctx)
-                }).catch({ error in
-                    debugPrint(error)
-                })
-                
-            } catch {
-                fatalError(error.localizedDescription)
+            subscribe(pb_request.heartbeatInbox) { MSG in
+                MSG.reply(payload: "".data(using: .utf8)!)
             }
+            guard let clusterName = config.clusterName else {
+                debugPrint("Nats Cluster Name is not specified. Streaming connection can not be established")
+                return
+            }
+            request(clusterName, payload: data, timeout: 3, numberOfResponse: .single).map({ MSG -> Void in
+                self.steamingConnectionResponse = try Pb_ConnectResponse(serializedData: MSG.payload)
+                self.delegate.onStreamingOpen(handler: self, ctx: ctx)
+            }).catch({ error in
+                debugPrint(error)
+            })
         }
     }
     
-    public func unsubscribeStreamingRequest(sub: NatsCallbacks) throws -> EventLoopFuture<Void> {
+    public func unsubscribeStreamingRequest(sub: NatsCallbacks) -> EventLoopFuture<Void> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
-            throw error
+            return container.eventLoop.newFailedFuture(error: error)
         }
         var unsub = Pb_UnsubscribeRequest()
         unsub.clientID = connectRequest.clientID
         unsub.subject = sub.subject
         unsub.inbox = sub.id.uuidString
         
-        let payload = try unsub.serializedData()
-        return try request(connectResponse.unsubRequests, payload: payload, timeout: 2, numberOfResponse: .single).map({ msg -> Void in
+        guard let payload = try? unsub.serializedData() else {
+            let error = NatsGeneralError(identifier: "Failed to serialize streaming request data", reason: "")
+            return container.eventLoop.newFailedFuture(error: error)
+        }
+        
+        
+        return request(connectResponse.unsubRequests, payload: payload, timeout: 2, numberOfResponse: .single).map({ msg -> Void in
             return
         })
     }
-    public func streamingCloseRequest() throws -> EventLoopFuture<Void> {
+    public func streamingCloseRequest() -> EventLoopFuture<Void> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
-            throw error
+            return container.eventLoop.newFailedFuture(error: error)
         }
         
         var close = Pb_CloseRequest()
         close.clientID = connectRequest.clientID
-        let payload = try close.serializedData()
-        return try request(connectResponse.closeRequests, payload: payload, timeout: 20, numberOfResponse: .single).map({ msg -> Void in
+
+        guard let payload = try? close.serializedData() else {
+            let error = NatsGeneralError(identifier: "Failed to serialize streaming request data", reason: "")
+            return container.eventLoop.newFailedFuture(error: error)
+        }
+        
+        return request(connectResponse.closeRequests, payload: payload, timeout: 20, numberOfResponse: .single).map({ msg -> Void in
             return
         })
         
     }
-    public func streamingPub(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
+    public func streamingPub(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
-            throw error
+            return container.eventLoop.newFailedFuture(error: error)
         }
         
         let uuid = UUID()
@@ -171,8 +174,14 @@ public final class NatsHandler: ChannelInboundHandler {
         pub.guid = inbox.uuidString
         pub.data = payload
         
-        let payload = try pub.serializedData()
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+        guard let payload = try? pub.serializedData() else {
+            let error = NatsGeneralError(identifier: "Failed to serialize streaming request data", reason: "")
+            return container.eventLoop.newFailedFuture(error: error)
+        }
+
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
         
         var finalData: Data = Data()
         let sub = "\(Proto.SUB.rawValue) \(inbox.uuidString) \(inbox.uuidString)\r\n\(Proto.UNSUB.rawValue) \(inbox.uuidString) \(2)\r\n".data(using: .utf8)!
@@ -196,10 +205,10 @@ public final class NatsHandler: ChannelInboundHandler {
         return ctx.eventLoop.newSucceededFuture(result: Void())
     }
     
-    public func streamingRequest(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage> {
+    public func streamingRequest(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
-            throw error
+            return container.eventLoop.newFailedFuture(error: error)
         }
         
         let uuid = UUID()
@@ -212,8 +221,13 @@ public final class NatsHandler: ChannelInboundHandler {
         pub.data = payload
         pub.reply = reply.uuidString
         
-        let payload = try pub.serializedData()
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+        guard let payload = try? pub.serializedData() else {
+            let error = NatsGeneralError(identifier: "Failed to serialize streaming request data", reason: "")
+            return container.eventLoop.newFailedFuture(error: error)
+        }
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
         
         var finalData: Data = Data()
         
@@ -263,10 +277,10 @@ public final class NatsHandler: ChannelInboundHandler {
         return promise.futureResult
     }
     
-    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void> {
+    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
-            throw error
+            return container.eventLoop.newFailedFuture(error: error)
         }
         let inbox = UUID()
         var subscribeRequest = Pb_SubscriptionRequest()
@@ -277,15 +291,20 @@ public final class NatsHandler: ChannelInboundHandler {
         subscribeRequest.maxInFlight = 1
         subscribeRequest.ackWaitInSecs = 2
         
-        let data = try subscribeRequest.serializedData()
+        guard let data = try? subscribeRequest.serializedData() else {
+            let error = NatsGeneralError(identifier: "Failed to serialize streaming request data", reason: "")
+            return container.eventLoop.newFailedFuture(error: error)
+        }
         
         let subscriptionString = "\(Proto.SUB.rawValue) \(inbox.uuidString) \(queueGroup)\(inbox.uuidString)\r\n".data(using: .utf8) ?? Data()
         
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
         
         
         return self.write(ctx: ctx, data: subscriptionString).flatMap { Void -> EventLoopFuture<Void> in
-            return try self.request(connectResponse.subRequests, payload: data, timeout: 4, numberOfResponse: .single).map { msg -> Void in
+            return self.request(connectResponse.subRequests, payload: data, timeout: 4, numberOfResponse: .single).map { msg -> Void in
                 let response = try Pb_SubscriptionResponse(serializedData: msg.payload)
                 guard self.subscriptions.filter({ $0.value.subject == subject }).count == 0 else {
                     debugPrint("\(subject) -> ALREADY SUBSCRIBED")
@@ -299,8 +318,10 @@ public final class NatsHandler: ChannelInboundHandler {
         }
     }
     
-    public func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+    public func publish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
         let pub = "\(Proto.PUB.rawValue) \(subject) \(payload.count)"
         guard var pubData = pub.data(using: .utf8) else {
             let error = NatsGeneralError(identifier: "Data parsing error", reason: "Could not convert String into Data, weird")
@@ -327,17 +348,19 @@ public final class NatsHandler: ChannelInboundHandler {
     }
     
     
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) throws -> EventLoopFuture<Void>{
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void>{
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
         guard let sub = subscriptions.filter({ $0.value.subject == subject }).first else { return ctx.eventLoop.newSucceededFuture(result: Void()) }
         subscriptions.removeValue(forKey: sub.key)
         return write(ctx: ctx, data: sub.value.unsub(max))
     }
     
-    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage> {
+    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage> {
         let uuid = UUID()
         
-        guard let ctx = self.ctx else { throw NatsRequestError.coundNotFindChannelContextToUse}
+        guard let ctx = self.ctx else { return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)}
         
         let promise = ctx.eventLoop.newPromise(of: NatsMessage.self)
         
@@ -433,7 +456,7 @@ public final class NatsHandler: ChannelInboundHandler {
                     
                     let data = try ack.serializedData()
                     
-                    try publish(streamMSG.ackInbox, payload: data).map({ Void -> Void in
+                    publish(streamMSG.ackInbox, payload: data).map({ Void -> Void in
                         
                         let newMessage = NatsMessage(msg: message, container: self.container, ctx: ctx, streamingPayload: msgProto)
                         streamMSG.callback(newMessage)

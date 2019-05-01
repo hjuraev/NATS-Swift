@@ -137,25 +137,20 @@ public final class NATS: Service {
                 for _ in 0..<threadCount {
                     let eventLoop = threadGroup.next()
                     eventLoop.execute({
-                        do {
-                            if let handler = self.handlerCacher.currentValue {
-                                for (x, value) in handler.subscriptions {
-                                    switch value.callback {
-                                    case .REQ(_):
-                                        break
-                                    case .StreamingMSG(_):
-                                        _ = try handler.streamingCloseRequest()
-                                        break
-                                    default:
-                                        _ = try self.publishRaw(payload: value.unsub(0))
-                                        break
-                                    }
-                                    handler.subscriptions.removeValue(forKey: x)
+                        if let handler = self.handlerCacher.currentValue {
+                            for (x, value) in handler.subscriptions {
+                                switch value.callback {
+                                case .REQ(_):
+                                    break
+                                case .StreamingMSG(_):
+                                    _ = handler.streamingCloseRequest()
+                                    break
+                                default:
+                                    _ = self.publishRaw(payload: value.unsub(0))
+                                    break
                                 }
+                                handler.subscriptions.removeValue(forKey: x)
                             }
-                            
-                        }catch {
-                            debugPrint(error)
                         }
                     })
                 }
@@ -196,47 +191,65 @@ public final class NATS: Service {
         self.config = config
     }
     
-    public func streamingPublish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.streamingPub(subject,payload:payload)
+    @discardableResult
+    public func streamingPublish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.streamingPub(subject,payload:payload)
     }
     
-    public func streamingRequest(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage>{
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.streamingRequest(subject, payload:payload, timeout:timeout, numberOfResponse:numberOfResponse)
-    }
-    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void> {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
+    public func streamingRequest(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage>{
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.streamingRequest(subject, payload:payload, timeout:timeout, numberOfResponse:numberOfResponse)
     }
     
     @discardableResult
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void>  {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
+    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
+    }
+    
+    @discardableResult
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void>  {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
         return handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
     }
-    
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) throws -> EventLoopFuture<Void> {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.unsubscribe(subject, max: max)
+    @discardableResult
+    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.unsubscribe(subject, max: max)
+    }
+    @discardableResult
+    public func publish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.publish(subject, payload: payload)
     }
     
-    public func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.publish(subject, payload: payload)
+    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.request(subject, payload: payload, timeout: timeout, numberOfResponse: numberOfResponse)
     }
-    
-    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage> {
-        guard let handler = handlerCacher.currentValue else {throw handlerError()}
-        return try handler.request(subject, payload: payload, timeout: timeout, numberOfResponse: numberOfResponse)
-    }
-    public func publishRaw(payload: Data)throws -> EventLoopFuture<Void> {
-        guard let handler = handlerCacher.currentValue, let ctx = handler.ctx else {throw handlerError()}
+    @discardableResult
+    public func publishRaw(payload: Data) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue, let ctx = handler.ctx else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
         return handler.write(ctx: ctx, data: payload)
     }
-    func handlerError() -> NatsGeneralError {
-        return NatsGeneralError(identifier: "Channel Handler not found", reason: "Internal Error, Channel handler not found for this thread")
-    }
+
     
     enum NatsRequestError: Error {
         case TIMEOUT

@@ -40,16 +40,16 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
         debugPrint(text)
     }
     
-    
-    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func streamingSubscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
+        return handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     @discardableResult
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) throws -> EventLoopFuture<Void>  {
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void>  {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
@@ -58,13 +58,13 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
     }
     
     
-    
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.unsubscribe(subject, max: max)
+        return handler.unsubscribe(subject, max: max)
     }
     
     /**
@@ -73,20 +73,22 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
      *
      */
     
-    public func streamingPublish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func streamingPublish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.streamingPub(subject, payload:payload)
+        return handler.streamingPub(subject, payload:payload)
     }
     
-    public func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func publish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.publish(subject, payload: payload)
+        return handler.publish(subject, payload: payload)
     }
     
     /**
@@ -94,36 +96,37 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
      * reply to id in subject
      *
      */
-    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage> {
+    public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try handler.request(subject, payload: payload, timeout: timeout, numberOfResponse: numberOfResponse)
+        return handler.request(subject, payload: payload, timeout: timeout, numberOfResponse: numberOfResponse)
     }
     
     
-    
-    public func steamingReply(payload: Data) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func steamingReply(payload: Data) -> EventLoopFuture<Void> {
         guard let streamingPayload = self.streamingPayload, !streamingPayload.reply.isEmpty else {
             let error = NatsGeneralError(identifier: "Not steaming message", reason: "This message is not streaming")
-            throw error
+            return ctx.eventLoop.newFailedFuture(error: error)
         }
         
         guard !streamingPayload.reply.isEmpty else {
             let error = NatsGeneralError(identifier: "Replay string not found", reason: "This message does not have reply subject")
-            throw error
+            return ctx.eventLoop.newFailedFuture(error: error)
         }
         
-        return try self.publish(streamingPayload.reply, payload: payload)
+        return self.publish(streamingPayload.reply, payload: payload)
     }
     
-    public func reply(payload: Data) throws -> EventLoopFuture<Void> {
+    @discardableResult
+    public func reply(payload: Data) -> EventLoopFuture<Void> {
         guard let replyTopic = self.headers.reply else {
             let error = NatsGeneralError(identifier: "REPLY HEADERS DOES NOT EXISTS", reason: "THIS MESSAGE IS NOT A REQUEST, NO NEED TO RESPOND")
-            throw error
+            return ctx.eventLoop.newFailedFuture(error: error)
         }
-        return try self.publish(replyTopic, payload: payload)
+        return self.publish(replyTopic, payload: payload)
     }
     
     public static var aliasedContainer: KeyPath<NatsMessage, Container>  = \.sharedContainer
