@@ -54,7 +54,6 @@ public class NatsRequest {
     public enum NumberOfResponse {
         case single
         case multiple(MultipleResponses)
-        case unlimited
     }
     
     public class MultipleResponses {
@@ -105,14 +104,8 @@ public class NatsCallbacks {
         return "\(Proto.SUB.rawValue) \(subject) \(group())\(id.uuidString)\r\n".data(using: .utf8) ?? Data()
     }
     
-    public func unsub(_ max: UInt32) -> Data {
-        let wait: () -> String = {
-            if max > 0 {
-                return " \(max)"
-            }
-            return ""
-        }
-        return "\(Proto.UNSUB.rawValue) \(id)\(wait())\r\n".data(using: .utf8) ?? Data()
+    public func unsub(_ max: Int) -> Data {
+        return "\(Proto.UNSUB.rawValue) \(id)\(max)\r\n".data(using: .utf8) ?? Data()
     }
     
     func counter() {

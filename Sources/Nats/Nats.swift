@@ -222,7 +222,7 @@ public final class NATS: Service {
         return handler.subscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     @discardableResult
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void> {
+    public func unsubscribe(_ subject: String, max: Int = 0) -> EventLoopFuture<Void> {
         guard let handler = handlerCacher.currentValue else {
             fatalError("Internal Error, Channel handler not found for this thread")
         }

@@ -237,8 +237,6 @@ public final class NatsHandler: ChannelInboundHandler {
             numberOfResponses = "\(Proto.UNSUB.rawValue) \(reply.uuidString) \(count.count)\r\n"
         case .single:
             numberOfResponses = "\(Proto.UNSUB.rawValue) \(reply.uuidString) \(1)\r\n"
-        case .unlimited:
-            numberOfResponses = "\(Proto.UNSUB.rawValue) \(reply.uuidString)\r\n"
         }
         
         let request = "\(Proto.SUB.rawValue) \(reply.uuidString) \(reply.uuidString)\r\n\(numberOfResponses)".data(using: .utf8)!
@@ -347,8 +345,8 @@ public final class NatsHandler: ChannelInboundHandler {
         return self.write(ctx: ctx, data: sub.sub())
     }
     
-    
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void>{
+    @discardableResult
+    public func unsubscribe(_ subject: String, max: Int = 0) -> EventLoopFuture<Void>{
         guard let ctx = self.ctx else {
             return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
         }
@@ -364,13 +362,35 @@ public final class NatsHandler: ChannelInboundHandler {
         
         let promise = ctx.eventLoop.newPromise(of: NatsMessage.self)
         
-        let schedule = ctx.eventLoop.scheduleTask(in: .seconds(timeout), {
-            self.subscriptions.removeValue(forKey: uuid)
+        let schedule = ctx.eventLoop.scheduleTask(in: .seconds(timeout), { [weak self] in
+            guard let StrongSelf = self, let callback = StrongSelf.subscriptions[uuid] else {return}
+            self?.subscriptions.removeValue(forKey: uuid)
+            switch callback.callback {
+            case .REQ(let request):
+                switch request.numberOfResponse {
+                case .multiple(_):
+                    StrongSelf.unsubscribe(callback.subject)
+                case .single:
+                    return
+                }
+                break
+            default:
+                break
+            }
             let error = NatsGeneralError(identifier: "NATS TIMEOUT", reason: "TIMEOUT SUBJECT: \(subject)")
             promise.fail(error: error)
         })
         var finalData: Data = Data()
-        let sub = "\(Proto.SUB.rawValue) \(uuid.uuidString) \(uuid.uuidString)\r\n\(Proto.UNSUB.rawValue) \(uuid.uuidString) \(1)\r\n".data(using: .utf8)!
+        
+        var sub: Data
+        
+        switch numberOfResponse {
+        case .multiple(let count):
+            sub = "\(Proto.SUB.rawValue) \(uuid.uuidString) \(uuid.uuidString)\r\n\(Proto.UNSUB.rawValue) \(uuid.uuidString) \(count.count)\r\n".data(using: .utf8)!
+        case .single:
+            sub = "\(Proto.SUB.rawValue) \(uuid.uuidString) \(uuid.uuidString)\r\n\(Proto.UNSUB.rawValue) \(uuid.uuidString) \(1)\r\n".data(using: .utf8)!
+        }
+        
         let request = NatsRequest(promise: promise, scheduler: schedule, numberOfResponse: numberOfResponse)
         let natsCallback = NatsCallbacks(id: uuid, subject: subject, queueGroup: "", callback: .REQ(request))
         subscriptions.updateValue(natsCallback, forKey: uuid)
@@ -429,17 +449,17 @@ public final class NatsHandler: ChannelInboundHandler {
                     callback(newMessage)
                 case .REQ(let promise):
                     let newMessage = NatsMessage(msg: message, container: container, ctx: ctx)
-                    promise.scheduler?.cancel()
                     
                     switch promise.numberOfResponse {
                     case .single:
+                        promise.scheduler?.cancel()
                         subscriptions.removeValue(forKey: message.headers.sid)
                     case .multiple(let count):
                         if !count.counter() {
                             subscriptions.removeValue(forKey: message.headers.sid)
+                            promise.scheduler?.cancel()
                         }
-                    case .unlimited:
-                        break
+
                     }
                     promise.promise.succeed(result: newMessage)
                 case .pubAck(let proto):

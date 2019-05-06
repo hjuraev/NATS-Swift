@@ -59,7 +59,7 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
     
     
     @discardableResult
-    public func unsubscribe(_ subject: String, max: UInt32 = 0) -> EventLoopFuture<Void> {
+    public func unsubscribe(_ subject: String, max: Int = 0) -> EventLoopFuture<Void> {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)
