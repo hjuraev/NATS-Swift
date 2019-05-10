@@ -363,20 +363,7 @@ public final class NatsHandler: ChannelInboundHandler {
         let promise = ctx.eventLoop.newPromise(of: NatsMessage.self)
         
         let schedule = ctx.eventLoop.scheduleTask(in: .seconds(timeout), { [weak self] in
-            guard let StrongSelf = self, let callback = StrongSelf.subscriptions[uuid] else {return}
             self?.subscriptions.removeValue(forKey: uuid)
-            switch callback.callback {
-            case .REQ(let request):
-                switch request.numberOfResponse {
-                case .multiple(_):
-                    StrongSelf.unsubscribe(callback.subject)
-                case .single:
-                    return
-                }
-                break
-            default:
-                break
-            }
             let error = NatsGeneralError(identifier: "NATS TIMEOUT", reason: "TIMEOUT SUBJECT: \(subject)")
             promise.fail(error: error)
         })
