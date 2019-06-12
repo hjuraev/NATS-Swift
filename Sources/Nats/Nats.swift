@@ -191,6 +191,16 @@ public final class NATS: Service {
         self.config = config
     }
     
+    
+    @discardableResult
+    public func unsubscribe(ids: [UUID]) -> EventLoopFuture<Void> {
+        guard let handler = handlerCacher.currentValue else {
+            fatalError("Internal Error, Channel handler not found for this thread")
+        }
+        return handler.unsubscribe(ids: ids)
+    }
+    
+    
     @discardableResult
     public func streamingPublish(_ subject: String, payload: Data) -> EventLoopFuture<Void> {
         guard let handler = handlerCacher.currentValue else {
@@ -215,7 +225,7 @@ public final class NATS: Service {
     }
     
     @discardableResult
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void>  {
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<UUID>  {
         guard let handler = handlerCacher.currentValue else {
             fatalError("Internal Error, Channel handler not found for this thread")
         }

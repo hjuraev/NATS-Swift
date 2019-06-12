@@ -23,18 +23,24 @@ public struct MSG {
 }
 
 public protocol NatsResponder  {
-    func publish(_ subject: String, payload: Data) throws -> EventLoopFuture<Void>
-    func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) throws -> EventLoopFuture<NatsMessage>
-    func unsubscribe()
+    func publish(_ subject: String, payload: Data) -> EventLoopFuture<Void>
+    func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage>
+    func unsubscribe(_ subject: String, max: Int) -> EventLoopFuture<Void>
+    func unsubscribe(ids: [UUID]) -> EventLoopFuture<Void>
 }
 
 public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStringConvertible, CustomDebugStringConvertible, NatsResponder, Logger  {
-    public func unsubscribe() {
-        
+    
+    @discardableResult
+    public func unsubscribe(ids: [UUID]) -> EventLoopFuture<Void> {
+        guard let handler = ctx.handler as? NatsHandler else {
+            let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
+            return ctx.eventLoop.newFailedFuture(error: error)
+        }
+        return handler.unsubscribe(ids: ids)
     }
     
-    
-    
+
     public func log(_ string: String, at level: LogLevel, file: String, function: String, line: UInt, column: UInt) {
         let text: String = "[ \(level) ] \(string)  --  (\(file):\(line))"
         debugPrint(text)
@@ -49,7 +55,7 @@ public final class NatsMessage: ContainerAlias, DatabaseConnectable,  CustomStri
         return handler.streamingSubscribe(subject, queueGroup: queueGroup, callback: callback)
     }
     @discardableResult
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void>  {
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<UUID>  {
         guard let handler = ctx.handler as? NatsHandler else {
             let error = NatsGeneralError(identifier: "NATS Handler error", reason: "More likely incorrect thread")
             return ctx.eventLoop.newFailedFuture(error: error)

@@ -105,7 +105,7 @@ public class NatsCallbacks {
     }
     
     public func unsub(_ max: Int) -> Data {
-        return "\(Proto.UNSUB.rawValue) \(id)\(max)\r\n".data(using: .utf8) ?? Data()
+        return "\(Proto.UNSUB.rawValue) \(id) \(max)\r\n".data(using: .utf8) ?? Data()
     }
     
     func counter() {

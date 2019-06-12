@@ -120,7 +120,7 @@ public final class NatsHandler: ChannelInboundHandler {
             })
         }
     }
-    
+
     public func unsubscribeStreamingRequest(sub: NatsCallbacks) -> EventLoopFuture<Void> {
         guard let connectRequest = self.steamingConnectionRequest, let connectResponse = self.steamingConnectionResponse else {
             let error = NatsGeneralError(identifier: "Connect Request or Connect Response is null", reason: "Please make sure you turned on streaming in Nats Config file")
@@ -334,15 +334,14 @@ public final class NatsHandler: ChannelInboundHandler {
     }
     
     @discardableResult
-    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<Void> {
+    public func subscribe(_ subject: String, queueGroup: String = "", callback: @escaping ((_ T: NatsMessage) -> ())) -> EventLoopFuture<UUID> {
         guard let ctx = self.ctx else { fatalError("Cound not find channel context to use")}
-        guard subscriptions.filter({ $0.value.subject == subject }).count == 0 else {
-            return ctx.eventLoop.newSucceededFuture(result: Void())
-        }
+
         let uuid = UUID()
         let sub = NatsCallbacks(id: uuid, subject: subject, queueGroup: queueGroup, callback: .MSG(callback))
         subscriptions.updateValue(sub, forKey: uuid)
-        return self.write(ctx: ctx, data: sub.sub())
+        
+        return self.write(ctx: ctx, data: sub.sub()).map{uuid}
     }
     
     @discardableResult
@@ -353,6 +352,27 @@ public final class NatsHandler: ChannelInboundHandler {
         guard let sub = subscriptions.filter({ $0.value.subject == subject }).first else { return ctx.eventLoop.newSucceededFuture(result: Void()) }
         subscriptions.removeValue(forKey: sub.key)
         return write(ctx: ctx, data: sub.value.unsub(max))
+    }
+    
+    @discardableResult
+    public func unsubscribe(ids: [UUID]) -> EventLoopFuture<Void>{
+        guard let ctx = self.ctx else {
+            return container.eventLoop.newFailedFuture(error: NatsRequestError.coundNotFindChannelContextToUse)
+        }
+        var localSubs: [UUID: NatsCallbacks] = [:]
+        var data = Data()
+        
+        for x in ids {
+            if let sub = subscriptions.removeValue(forKey: x) {
+                data.append(sub.unsub(0))
+                localSubs.updateValue(sub, forKey: x)
+            }
+        }
+        
+        if localSubs.isEmpty {
+           return ctx.eventLoop.newSucceededFuture(result: ())
+        }
+        return write(ctx: ctx, data: data)
     }
     
     public func request(_ subject: String, payload: Data, timeout: Int, numberOfResponse: NatsRequest.NumberOfResponse) -> EventLoopFuture<NatsMessage> {
